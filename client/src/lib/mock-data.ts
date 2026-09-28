@@ -1,6 +1,6 @@
 export type RecordStatus = "Draft" | "Submitted" | "Returned" | "Approved" | "Invoiced";
 export type Participant = { id: string; name: string; preferred: string; ndis: string; phone: string; email: string; address: string; plan: string; manager: string; nominee: string; emergency: string; alerts: string[]; goals: string[]; communication: string; mobility: string; transport: string; support: string; risks: string; allergies: string; preferences: string; status: "Active" | "Archived" };
-export type Staff = { id: string; name: string; initials: string; role: "Staff" | "Admin" | "Manager/Reviewer"; status: "Active" | "On leave"; email: string; team: string };
+export type Staff = { id: string; name: string; initials: string; position: string; status: "Active" | "On leave"; email: string; team: string };
 export type Billable = { label: string; unit: string; quantity: number; rate: number; subtotal: number };
 export type ServiceRecord = { id: string; clientId: string; date: string; start: string; end: string; staffId: string; type: string; location: string; support: string; response: string; outcome: string; observations: string; followUp: string; km: number; status: RecordStatus; created: string; updated: string; approvedBy?: string; correction?: string; billables: Billable[]; confirmed: boolean; invoiceId?: string; voiceId?: string };
 export type Invoice = { id: string; clientId: string; recipient: string; issue: string; due: string; status: "Draft" | "Ready to send" | "Sent" | "Paid"; lines: Billable[]; subtotal: number; tax: number; total: number; recordIds: string[] };
@@ -15,10 +15,10 @@ export const participants: Participant[] = [
  {id:"p5",name:"Grace Chen",preferred:"Grace",ndis:"431 425 992",phone:"0417 233 920",email:"grace.chen@example.org",address:"6 Stirling Street, Norwood SA 5067",plan:"01 Sep 2025 – 31 Aug 2026",manager:"New Horizons Plan Management",nominee:"Ming Chen (sister)",emergency:"Ming Chen · 0400 334 122",alerts:["Plan review due this month"],goals:["Build confidence in social settings","Maintain healthy routines"],communication:"Prefers one-to-one conversations.",mobility:"",transport:"",support:"Social and community participation.",risks:"",allergies:"Shellfish",preferences:"Enjoys swimming and podcasts.",status:"Active"}
 ];
 export const staff: Staff[] = [
- {id:"s1",name:"Jordan Lee",initials:"JL",role:"Staff",status:"Active",email:"jordan.lee@noble.org.au",team:"Community Support"},
- {id:"s2",name:"Maya Thompson",initials:"MT",role:"Manager/Reviewer",status:"Active",email:"maya.thompson@noble.org.au",team:"Operations"},
- {id:"s3",name:"Alex Rivera",initials:"AR",role:"Admin",status:"Active",email:"alex.rivera@noble.org.au",team:"Administration"},
- {id:"s4",name:"Sam Patel",initials:"SP",role:"Staff",status:"On leave",email:"sam.patel@noble.org.au",team:"Community Support"}
+ {id:"s1",name:"Jordan Lee",initials:"JL",position:"Support Worker",status:"Active",email:"jordan.lee@noble.org.au",team:"Community Support"},
+ {id:"s2",name:"Maya Thompson",initials:"MT",position:"Operations Lead",status:"Active",email:"maya.thompson@noble.org.au",team:"Operations"},
+ {id:"s3",name:"Alex Rivera",initials:"AR",position:"Administrator",status:"Active",email:"alex.rivera@noble.org.au",team:"Administration"},
+ {id:"s4",name:"Sam Patel",initials:"SP",position:"Support Worker",status:"On leave",email:"sam.patel@noble.org.au",team:"Community Support"}
 ];
 export const serviceRates = [
  {id:"r1",name:"Community participation",unit:"Hour",rate:68.30,transport:true,transportUnit:"Kilometre",active:true,updated:"12 Sep 2026"},
