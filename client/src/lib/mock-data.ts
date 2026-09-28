@@ -40,3 +40,24 @@ export const initialVoice: Voice[] = [
  {id:"VN-027",title:"Noah travel practice",clientId:"p2",duration:"02:18",created:"Yesterday, 3:32 pm",transcript:"Noah planned the route to the foreshore with the map. We practised crossing at the lights. He requested a short break using his board, then continued.",transcriptStatus:"Ready",generationStatus:"Draft ready",status:"Draft ready",draft:{support:"Supported Noah to plan a route using a map and practise crossing at marked crossings.",response:"Noah requested a short break using his communication board, then rejoined the activity.",outcome:"Practised safe independent travel and communicating support preferences.",observations:"A break was offered during the outing.",followUp:"Repeat the foreshore route at the next visit."}},
  {id:"VN-026",title:"Priya meal preparation",clientId:"p3",duration:"00:56",created:"18 Sep, 11:48 am",transcript:"",transcriptStatus:"Unavailable",generationStatus:"Not generated",status:"Saved"}
 ];
+
+export type ShiftRatio = "1:1" | "1:M" | "M:M";
+export type RosterShift = { id: string; date: string; start: string; end: string; ratio: ShiftRatio; clientIds: string[]; staffIds: string[]; type: string; location: string; status: "Planned" | "Confirmed" | "Completed" };
+export type BudgetCategory = { name: string; allocation: number };
+export type ClientBudget = { clientId: string; planStart: string; planEnd: string; categories: BudgetCategory[] };
+
+export const initialRosterShifts: RosterShift[] = [
+  { id: "SH-2401", date: date(0), start: "09:00", end: "12:00", ratio: "1:1", clientIds: ["p1"], staffIds: ["s1"], type: "Community participation", location: "Marion Shopping Centre", status: "Confirmed" },
+  { id: "SH-2402", date: date(0), start: "09:30", end: "12:30", ratio: "1:M", clientIds: ["p2", "p3"], staffIds: ["s2"], type: "Group community access", location: "Adelaide CBD", status: "Planned" },
+  { id: "SH-2403", date: date(0), start: "13:00", end: "16:00", ratio: "M:M", clientIds: ["p4", "p5"], staffIds: ["s1", "s2"], type: "Group community access", location: "Botanic Gardens", status: "Confirmed" },
+  { id: "SH-2404", date: date(1), start: "10:00", end: "12:00", ratio: "1:1", clientIds: ["p3"], staffIds: ["s1"], type: "Daily living skills", location: "Participant home", status: "Planned" },
+  { id: "SH-2405", date: date(2), start: "09:00", end: "11:00", ratio: "1:1", clientIds: ["p5"], staffIds: ["s2"], type: "Community participation", location: "Local community", status: "Planned" }
+];
+
+export const initialClientBudgets: ClientBudget[] = [
+  { clientId: "p1", planStart: "2026-02-01", planEnd: "2027-01-31", categories: [{ name: "Community participation", allocation: 10500 }, { name: "Daily living skills", allocation: 7000 }, { name: "Support coordination", allocation: 3000 }] },
+  { clientId: "p2", planStart: "2026-05-01", planEnd: "2027-04-30", categories: [{ name: "Community participation", allocation: 8000 }, { name: "Daily living skills", allocation: 5000 }, { name: "Support coordination", allocation: 2000 }] },
+  { clientId: "p3", planStart: "2026-01-15", planEnd: "2027-01-14", categories: [{ name: "Community participation", allocation: 7000 }, { name: "Daily living skills", allocation: 8500 }, { name: "Support coordination", allocation: 2500 }] },
+  { clientId: "p4", planStart: "2026-03-01", planEnd: "2027-02-28", categories: [{ name: "Community participation", allocation: 4500 }, { name: "Daily living skills", allocation: 6500 }, { name: "Support coordination", allocation: 1500 }] },
+  { clientId: "p5", planStart: "2025-09-01", planEnd: "2026-08-31", categories: [{ name: "Community participation", allocation: 11000 }, { name: "Daily living skills", allocation: 5000 }, { name: "Support coordination", allocation: 2500 }] }
+];
