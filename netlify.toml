@@ -1,9 +1,19 @@
 [build]
   command = "pnpm build"
-  publish = "dist/public"
+  publish = "apps/web/dist"
 
 [build.environment]
   NODE_VERSION = "22"
+
+# The web app calls the API at /api on its own origin (cookies are same-site).
+# If the static site is hosted on Netlify, proxy /api to wherever the API container runs.
+# This rule must stay ABOVE the SPA fallback below. Replace the host, then uncomment:
+#
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://api.your-domain.org.au/api/:splat"
+#   status = 200
+#   force = true
 
 [[redirects]]
   from = "/*"

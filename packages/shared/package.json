@@ -1,0 +1,10 @@
+{
+  "name": "@noble/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zod schemas, DTO types and business rules used by both apps. Imported as TypeScript source through the @shared/* path alias, so there is nothing to build.",
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

@@ -1,0 +1,74 @@
+# Development stack: MongoDB (replica set, for transactions), Mailpit and the API.
+#
+#   docker compose up -d mongo mailpit    # databases only; run the apps on the host
+#   docker compose up -d --build          # everything, API included
+#
+# Host ports are overridable so this can run next to other projects. Defaults suit a laptop;
+# on the shared VM use the free 9xxx block from .env.example instead.
+name: noble
+
+services:
+  mongo:
+    image: mongo:8
+    # A single-node replica set: Mongo only offers transactions on a replica set, and the API
+    # uses them wherever several documents must change together.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --eval
+          "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) }; quit(db.hello().isWritablePrimary ? 0 : 1)"
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    # Catches every email the API sends: invites, password resets, invoices and expiry reminders.
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8125}:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1125}:1025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: "4100"
+      # pino-pretty is a dev dependency and is not in the image, whatever .env says.
+      LOG_PRETTY: "false"
+      MONGO_URI: mongodb://mongo:27017/noble?replicaSet=rs0
+      UPLOADS_DIR: /data/uploads
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-4100}:4100"
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  uploads_data:

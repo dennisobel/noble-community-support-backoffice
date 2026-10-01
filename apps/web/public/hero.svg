@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice" role="img" aria-labelledby="hero-title">
+  <title id="hero-title">Illustration of two people walking together along a path through a green park</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dfeee6"/>
+      <stop offset="0.55" stop-color="#f3f1e4"/>
+      <stop offset="1" stop-color="#f7efdc"/>
+    </linearGradient>
+    <linearGradient id="hillFar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b9d6c3"/>
+      <stop offset="1" stop-color="#a3c8b0"/>
+    </linearGradient>
+    <linearGradient id="hillMid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8dbb9d"/>
+      <stop offset="1" stop-color="#6fa585"/>
+    </linearGradient>
+    <linearGradient id="hillNear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5e9577"/>
+      <stop offset="1" stop-color="#3f7560"/>
+    </linearGradient>
+    <linearGradient id="path" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#efe3c8"/>
+      <stop offset="1" stop-color="#e2cfa8"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff6d8"/>
+      <stop offset="1" stop-color="#fff6d8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#sky)"/>
+  <circle cx="930" cy="210" r="210" fill="url(#sun)"/>
+  <circle cx="930" cy="210" r="62" fill="#fbeec4"/>
+  <path d="M0 470 C 180 400, 330 430, 480 410 S 820 350, 1000 395 S 1150 420, 1200 400 L1200 900 L0 900 Z" fill="url(#hillFar)"/>
+  <path d="M0 560 C 160 505, 360 540, 540 515 S 880 470, 1060 520 S 1170 540, 1200 530 L1200 900 L0 900 Z" fill="url(#hillMid)"/>
+  <g fill="#4f8a6c">
+    <circle cx="170" cy="470" r="46"/><circle cx="210" cy="448" r="40"/><circle cx="238" cy="478" r="34"/>
+    <rect x="198" y="490" width="10" height="48" rx="4" fill="#5d6f4f"/>
+    <circle cx="1040" cy="455" r="52"/><circle cx="1088" cy="432" r="44"/><circle cx="1115" cy="470" r="36"/>
+    <rect x="1074" y="480" width="11" height="56" rx="4" fill="#5d6f4f"/>
+  </g>
+  <path d="M0 660 C 200 610, 420 650, 620 620 S 980 580, 1200 630 L1200 900 L0 900 Z" fill="url(#hillNear)"/>
+  <path d="M520 900 C 560 800, 640 740, 700 690 S 790 610, 820 560 L 846 560 C 836 620, 790 670, 760 720 S 700 820, 720 900 Z" fill="url(#path)"/>
+  <g fill="#3a6c56" opacity="0.9">
+    <circle cx="300" cy="640" r="70"/><circle cx="360" cy="610" r="60"/><circle cx="410" cy="650" r="52"/>
+    <rect x="348" y="660" width="14" height="70" rx="5" fill="#4b5d40"/>
+  </g>
+  <g transform="translate(726 548)">
+    <ellipse cx="10" cy="120" rx="46" ry="7" fill="#2f5d4a" opacity="0.25"/>
+    <circle cx="-12" cy="8" r="11" fill="#6b4e3d"/>
+    <path d="M-26 22 Q -12 14 2 22 L 4 72 L -28 72 Z" fill="#2d6f70"/>
+    <path d="M-24 72 L -30 116 M -6 72 L 2 116" stroke="#264a55" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="26" cy="12" r="10" fill="#a0715a"/>
+    <path d="M13 25 Q 26 18 39 25 L 41 72 L 11 72 Z" fill="#e3a458"/>
+    <path d="M16 72 L 12 114 M 34 72 L 40 114" stroke="#5a4636" stroke-width="7" stroke-linecap="round"/>
+    <path d="M2 40 Q 8 46 13 40" stroke="#e3a458" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </g>
+  <g fill="#fbfaf2" opacity="0.8">
+    <ellipse cx="260" cy="170" rx="70" ry="18"/><ellipse cx="310" cy="160" rx="50" ry="16"/>
+    <ellipse cx="620" cy="120" rx="80" ry="16"/><ellipse cx="670" cy="112" rx="46" ry="14"/>
+  </g>
+</svg>

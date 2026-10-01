@@ -111,3 +111,12 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Local data and secrets
+.env.production
+apps/api/data/
+data/
+backups/
+
+# E2E screenshots
+e2e/screenshots/
