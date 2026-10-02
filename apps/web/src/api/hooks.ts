@@ -16,6 +16,7 @@ import type {
   DocumentDTO,
   IncidentReportDTO,
   InvoiceDTO,
+  PublicInvoiceDTO,
   InvoiceSummaryDTO,
   LiveTrackingDTO,
   LogbookEntryDTO,
@@ -46,6 +47,8 @@ import type {
   VoiceSummaryDTO,
   WithWarnings,
   WorkspaceDTO,
+  XeroOptionsDTO,
+  XeroStatusDTO,
 } from "@shared/dto";
 import type {
   BudgetAdjustInput,
@@ -64,6 +67,7 @@ import type {
   StaffCreateInput,
   StaffUpdateInput,
   WorkspacePatchInput,
+  XeroSettingsInput,
 } from "@shared/schemas";
 import { api } from "./client";
 
@@ -81,6 +85,7 @@ const GROUPS = {
   documents: ["documents-tree"],
   settings: ["workspace", "preferences", "meta", "session"],
   sessions: ["auth-sessions"],
+  xero: ["xero-status", "xero-options"],
   derived: ["dashboard", "notifications", "reports", "activity", "search"],
 } as const;
 type Group = keyof typeof GROUPS;
@@ -492,6 +497,9 @@ export const useInvoice = (id: string | undefined) =>
     queryKey: ["invoice", id],
     queryFn: () => api.get<InvoiceDTO>(`/invoices/${id}`),
     enabled: Boolean(id),
+    // While Xero is still picking the invoice up, look again every few seconds so the badge settles by itself.
+    refetchInterval: query =>
+      query.state.data?.xero?.state === "queued" ? 3000 : false,
   });
 export const useInvoiceSummary = () =>
   useQuery({
@@ -1153,3 +1161,77 @@ export const useReviewReport = (kind: "incidents" | "abc-reports") => {
     },
   });
 };
+
+/* ───────────── Invoice share links ───────────── */
+
+/** Turns the public link on or off. Off revokes every copy already sent. */
+export const useInvoiceShare = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.post<InvoiceDTO>(`/invoices/${id}/share`, { enabled }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["invoice"] });
+      void qc.invalidateQueries({ queryKey: ["invoices"] });
+    },
+  });
+};
+
+/** The invoice behind a share link. No session: the token in the URL is the credential. */
+export const usePublicInvoice = (token: string | undefined) =>
+  useQuery({
+    queryKey: ["public-invoice", token],
+    queryFn: () => api.get<PublicInvoiceDTO>(`/public/invoices/${token}`),
+    enabled: Boolean(token),
+    retry: false,
+  });
+
+/* ───────────── Xero ───────────── */
+
+export const useXeroStatus = () =>
+  useQuery({
+    queryKey: ["xero-status"],
+    queryFn: () => api.get<XeroStatusDTO>("/integrations/xero/status"),
+  });
+/** The organisation's own accounts and tax rates, for the mapping choices. Only asked for once connected. */
+export const useXeroOptions = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["xero-options"],
+    queryFn: () => api.get<XeroOptionsDTO>("/integrations/xero/options"),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+/** Returns the Xero sign-in address; the page then sends the browser there. */
+export const useXeroConnect = () =>
+  useMutation({
+    mutationFn: () =>
+      api.post<{ url: string }>("/integrations/xero/connect", {}),
+  });
+export const useXeroDisconnect = () =>
+  useApiMutation(
+    (_: void) => api.post<XeroStatusDTO>("/integrations/xero/disconnect", {}),
+    ["xero", "settings", "invoices"]
+  );
+export const useXeroSaveSettings = () =>
+  useApiMutation(
+    (input: XeroSettingsInput) =>
+      api.put<XeroStatusDTO>("/integrations/xero/settings", input),
+    ["xero"]
+  );
+/** Runs the payment check now instead of waiting for the 15-minute timer. */
+export const useXeroCheckNow = () =>
+  useApiMutation(
+    (_: void) => api.post<XeroStatusDTO>("/integrations/xero/sync", {}),
+    ["xero", "invoices"]
+  );
+/** "Send to Xero" and Retry on an invoice. */
+export const useXeroSyncInvoice = () =>
+  useApiMutation(
+    (id: string) =>
+      api.post<{ queued: boolean }>(
+        `/integrations/xero/invoices/${id}/sync`,
+        {}
+      ),
+    ["invoices"]
+  );

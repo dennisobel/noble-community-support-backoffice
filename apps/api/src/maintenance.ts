@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { storage } from "./lib/storage";
 import { purgeDeletedDocuments } from "./modules/documents/service";
 import { enqueueExpirySweep } from "./modules/portal/expiry";
+import { enqueueXeroPoll } from "./modules/xero/service";
 
 const SIX_HOURS = 6 * 60 * 60_000;
 const ONE_DAY = 24 * 60 * 60_000;
@@ -37,8 +38,21 @@ export async function runExpiryTick(): Promise<void> {
   }
 }
 
+/** Every 15 minutes: queues the Xero payment check. The check itself runs as a background job. */
+export async function runXeroTick(): Promise<void> {
+  try {
+    await enqueueXeroPoll();
+  } catch (error) {
+    logger().error({ err: error }, "Xero tick failed");
+  }
+}
+
 export function startMaintenance(): { stop: () => void } {
   const first = setTimeout(() => void runMaintenance(), 30_000);
+  const firstXero = setTimeout(() => void runXeroTick(), 60_000);
+  const xeroInterval = setInterval(() => void runXeroTick(), 15 * 60_000);
+  firstXero.unref();
+  xeroInterval.unref();
   // The cron fires the first time five minutes after boot (so expiry emails can go out
   // on the very first morning), then once every 24 hours.
   const firstExpiry = setTimeout(() => void runExpiryTick(), 5 * 60_000);
@@ -52,6 +66,8 @@ export function startMaintenance(): { stop: () => void } {
     stop: () => {
       clearTimeout(first);
       clearTimeout(firstExpiry);
+      clearTimeout(firstXero);
+      clearInterval(xeroInterval);
       clearInterval(interval);
       clearInterval(expiryInterval);
     },

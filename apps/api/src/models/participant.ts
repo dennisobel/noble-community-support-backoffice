@@ -21,6 +21,10 @@ export interface ParticipantDoc {
   manager: string;
   managerEmail: string;
   nominee: string;
+  coordinatorName: string;
+  coordinatorOrg: string;
+  coordinatorPhone: string;
+  coordinatorEmail: string;
   emergencyName: string;
   emergencyPhone: string;
   alerts: string[];
@@ -57,6 +61,10 @@ const participantSchema = new Schema<ParticipantDoc>(
     manager: { type: String, default: "" },
     managerEmail: { type: String, default: "" },
     nominee: { type: String, default: "" },
+    coordinatorName: { type: String, default: "" },
+    coordinatorOrg: { type: String, default: "" },
+    coordinatorPhone: { type: String, default: "" },
+    coordinatorEmail: { type: String, default: "" },
     emergencyName: { type: String, default: "" },
     emergencyPhone: { type: String, default: "" },
     alerts: { type: [String], default: [] },

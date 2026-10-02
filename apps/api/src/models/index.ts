@@ -19,3 +19,4 @@ export * from "./abc-report";
 export * from "./logbook-entry";
 export * from "./tracking";
 export * from "./system";
+export * from "./xero";

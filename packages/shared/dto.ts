@@ -10,6 +10,7 @@ import type {
   IncidentCategory,
   IncidentSeverity,
   InvoiceStatus,
+  XeroSyncState,
   Kyc,
   LogbookEntryType,
   NoteTemplate,
@@ -111,6 +112,8 @@ export interface WorkspaceDTO {
     footer: string;
     paymentInstructions: string;
   };
+  /** Printed on every invoice so a plan manager can pay it. */
+  bank: BankDetailsDTO;
   providerTravelRate: number;
   budgetCategories: string[];
   setupCompletedAt: string | null;
@@ -219,6 +222,10 @@ export interface ParticipantDTO {
   manager: string;
   managerEmail: string;
   nominee: string;
+  coordinatorName: string;
+  coordinatorOrg: string;
+  coordinatorPhone: string;
+  coordinatorEmail: string;
   emergency: string;
   emergencyName: string;
   emergencyPhone: string;
@@ -296,8 +303,60 @@ export type RecordCountsDTO = Record<RecordStatus, number>;
 
 /* ───────────── Invoices ───────────── */
 
+export interface BankDetailsDTO {
+  accountName: string;
+  bsb: string;
+  accountNumber: string;
+  /** What the payer should put in the payment reference. */
+  payInstruction: string;
+}
+
 export interface InvoiceLineDTO extends BillableDTO {
   recordId: string;
+  /** NDIS support item number of the service billed on this line; empty for travel and older invoices. */
+  itemCode: string;
+}
+
+/** Where one invoice stands in Xero. `state` is "none" until it has been sent there. */
+export interface InvoiceXeroDTO {
+  state: XeroSyncState;
+  /** Why it needs attention, or a note such as "Paid here, not in Xero". Empty when all is well. */
+  message: string;
+  syncedAt: string | null;
+  /** Opens the invoice in Xero. */
+  url: string | null;
+}
+
+/** The ledger choices an invoice needs, picked from the Xero organisation's own lists. */
+export interface XeroSettingsDTO {
+  salesAccountCode: string;
+  taxTypeGstFree: string;
+  taxTypeTaxable: string;
+  paymentAccountCode: string;
+}
+
+export interface XeroStatusDTO {
+  /** The server has a Xero app (client id and secret) to sign in with. */
+  configured: boolean;
+  connected: boolean;
+  /** Xero no longer accepts the saved sign-in; someone must connect again. */
+  needsReconnect: boolean;
+  orgName: string;
+  connectedAt: string | null;
+  connectedBy: string;
+  lastPollAt: string | null;
+  lastError: string;
+  settings: XeroSettingsDTO;
+  /** The exact address to register as the redirect URI on the Xero app. */
+  redirectUri: string;
+  /** Connected and mapped well enough to send invoices. */
+  ready: boolean;
+}
+
+export interface XeroOptionsDTO {
+  salesAccounts: Array<{ code: string; name: string }>;
+  bankAccounts: Array<{ code: string; name: string }>;
+  taxRates: Array<{ type: string; name: string; rate: number }>;
 }
 
 export interface InvoiceDTO {
@@ -327,6 +386,12 @@ export interface InvoiceDTO {
   taxRatePct: number;
   total: number;
   recordIds: string[];
+  /** Shown under "Reference" — the participant and their NDIS number by default. */
+  reference: string;
+  bank: BankDetailsDTO;
+  /** The read-only link a plan manager can open without signing in. */
+  share: { enabled: boolean; url: string | null; createdAt: string | null };
+  xero: InvoiceXeroDTO;
   notes: string;
   footer: string;
   paymentInstructions: string;
@@ -341,6 +406,38 @@ export interface InvoiceDTO {
   createdAt: string;
   updatedAt: string;
   rev: number;
+}
+
+/** What someone holding the share link is shown. No workspace or participant data beyond the invoice. */
+export interface PublicInvoiceDTO {
+  id: string;
+  title: string;
+  status: InvoiceStatus;
+  overdue: boolean;
+  reference: string;
+  recipient: string;
+  billTo: { name: string; address: string; ndis: string };
+  supplier: {
+    name: string;
+    legalName: string;
+    abn: string;
+    address: string;
+    phone: string;
+    email: string;
+  };
+  issue: string;
+  due: string;
+  paymentTermsDays: number;
+  lines: InvoiceLineDTO[];
+  subtotal: number;
+  tax: number;
+  taxRatePct: number;
+  total: number;
+  notes: string;
+  footer: string;
+  paymentInstructions: string;
+  bank: BankDetailsDTO;
+  paidOn: string | null;
 }
 
 export interface InvoiceSummaryDTO {

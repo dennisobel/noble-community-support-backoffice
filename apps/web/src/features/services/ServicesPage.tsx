@@ -1,5 +1,6 @@
 import { Check, Info, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import type { ServiceDTO } from "@shared/dto";
 import { SERVICE_UNITS, type ServiceUnit } from "@shared/enums";
 import { MESSAGES } from "@shared/messages";
@@ -25,6 +26,7 @@ import { money, prettyDate } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
 
 interface RowDraft {
+  supportItemNumber: string;
   rate: string;
   transport: boolean;
   active: boolean;
@@ -47,6 +49,9 @@ function AddServiceDrawer({ onClose }: { onClose: () => void }) {
   });
   const [error, setError] = useState("");
   const category = draft.budgetCategory || categories[0] || "";
+  const travelRate = money(
+    workspace.data?.providerTravelRate ?? DEFAULT_TRAVEL_RATE_CENTS / 100
+  );
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -184,8 +189,11 @@ function AddServiceDrawer({ onClose }: { onClose: () => void }) {
                       supportItemNumber: event.target.value,
                     }))
                   }
-                  placeholder="Optional"
+                  placeholder="e.g. 04_104_0125_6_1"
                 />
+                <p className="field-help">
+                  Printed under this service on every invoice.
+                </p>
               </div>
             </div>
             <label className="flex items-start gap-2 rounded-md bg-[#f5f8f7] p-3 text-xs text-[#586c74]">
@@ -198,11 +206,13 @@ function AddServiceDrawer({ onClose }: { onClose: () => void }) {
                 }
               />
               <span>
-                <b className="block text-[#405761]">Transport may be claimed</b>
+                <b className="block text-[#405761]">
+                  Transport claimable &middot; {travelRate}/km
+                </b>
                 <small className="mt-1 block text-[10px] text-[#839097]">
-                  Provider travel is billed per kilometre at the workspace
-                  travel rate ({money(workspace.data?.providerTravelRate ?? 1)}
-                  /km).
+                  Kilometres travelled are billed as a separate Provider travel
+                  line at {travelRate} per km. The rate is set once for the
+                  whole workspace in Settings.
                 </small>
               </span>
             </label>
@@ -245,9 +255,13 @@ export default function ServicesPage() {
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<ServiceDTO | null>(null);
   const categories = workspace.data?.budgetCategories ?? [];
+  const travelRate = money(
+    workspace.data?.providerTravelRate ?? DEFAULT_TRAVEL_RATE_CENTS / 100
+  );
 
   const draftFor = (service: ServiceDTO): RowDraft =>
     drafts[service.id] ?? {
+      supportItemNumber: service.supportItemNumber,
       rate: String(service.rate),
       transport: service.transport,
       active: service.active,
@@ -262,7 +276,8 @@ export default function ServicesPage() {
     const draft = drafts[service.id];
     return (
       Boolean(draft) &&
-      (Number(draft.rate) !== service.rate ||
+      (draft.supportItemNumber.trim() !== service.supportItemNumber ||
+        Number(draft.rate) !== service.rate ||
         draft.transport !== service.transport ||
         draft.active !== service.active ||
         draft.budgetCategory !== service.budgetCategory)
@@ -277,6 +292,7 @@ export default function ServicesPage() {
       await update.mutateAsync({
         id: service.id,
         rev: service.rev,
+        supportItemNumber: draft.supportItemNumber.trim(),
         rate,
         transport: draft.transport,
         active: draft.active,
@@ -336,11 +352,17 @@ export default function ServicesPage() {
                     <tr key={service.id}>
                       <td className="font-semibold text-[#40535e]">
                         {service.name}
-                        {service.supportItemNumber && (
-                          <small className="mt-1 block text-[10px] font-normal text-[#87949a]">
-                            {service.supportItemNumber}
-                          </small>
-                        )}
+                        <input
+                          className="input mt-1 block h-7 w-44 py-0 font-mono text-[10px] font-normal"
+                          value={draft.supportItemNumber}
+                          onChange={event =>
+                            change(service, {
+                              supportItemNumber: event.target.value,
+                            })
+                          }
+                          placeholder="NDIS item code"
+                          aria-label={`${service.name} NDIS support item number`}
+                        />
                       </td>
                       <td>{service.unit}</td>
                       <td>
@@ -387,7 +409,7 @@ export default function ServicesPage() {
                             }
                             aria-label={`${service.name} transport enabled`}
                           />
-                          {draft.transport ? "Per km" : "—"}
+                          {draft.transport ? `${travelRate}/km` : "—"}
                         </label>
                       </td>
                       <td>

@@ -64,7 +64,9 @@ export type JobType =
   | "transcribe"
   | "generate-draft"
   | "expiry-alerts"
-  | "staff-invite";
+  | "staff-invite"
+  | "xero-sync"
+  | "xero-poll";
 
 export interface JobDoc {
   _id: Types.ObjectId;

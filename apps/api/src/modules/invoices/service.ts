@@ -1,8 +1,15 @@
 import type { z } from "zod";
-import type { InvoiceDTO, InvoiceSummaryDTO, Paginated } from "@shared/dto";
+import type {
+  BankDetailsDTO,
+  InvoiceDTO,
+  InvoiceSummaryDTO,
+  Paginated,
+  PublicInvoiceDTO,
+} from "@shared/dto";
 import type { InvoiceStatus } from "@shared/enums";
 import { formatNdis } from "@shared/logic/ndis";
-import { fromCents } from "@shared/logic/money";
+import { TRAVEL_LABEL } from "@shared/logic/billing";
+import { fromCents, roundQuantity } from "@shared/logic/money";
 import { addDays, shortDate, startOfMonth } from "@shared/logic/time";
 import type {
   invoiceCreateSchema,
@@ -29,9 +36,11 @@ import { getWorkspace, workspaceToday } from "../../lib/workspace";
 import {
   Invoice,
   Participant,
+  Service,
   ServiceRecord,
   type InvoiceDoc,
   type ParticipantDoc,
+  type ServiceDoc,
   type ServiceRecordDoc,
 } from "../../models";
 import {
@@ -39,6 +48,83 @@ import {
   requireActiveParticipant,
 } from "../participants/service";
 import { renderInvoicePdf } from "./pdf";
+import { config } from "../../config";
+import { randomToken } from "../auth/tokens";
+import { queueXeroSync } from "../xero/service";
+
+const bankOf = (invoice: InvoiceDoc): BankDetailsDTO => ({
+  accountName: invoice.bank?.accountName ?? "",
+  bsb: invoice.bank?.bsb ?? "",
+  accountNumber: invoice.bank?.accountNumber ?? "",
+  payInstruction: invoice.bank?.payInstruction ?? "",
+});
+
+/** The address a payer opens. Built from APP_URL so it works behind any host. */
+export const shareUrlFor = (token: string) =>
+  `${config().appUrl}/invoice/${token}`;
+
+/**
+ * One line per support type and rate, the way a plan manager expects to read an invoice:
+ * "Community participation — Saturday, 4 hours @ $103.54" rather than a row per shift.
+ * Hours at different rates stay on separate lines because they are different support items.
+ * `recordId` keeps the first record of the group, so a line can still be traced back.
+ */
+function groupLines(
+  records: ServiceRecordDoc[],
+  itemCodes: Map<string, string>
+) {
+  const groups = new Map<
+    string,
+    {
+      label: string;
+      unit: string;
+      quantity: number;
+      rateCents: number;
+      subtotalCents: number;
+      recordId: string;
+      itemCode: string;
+    }
+  >();
+  for (const record of records) {
+    for (const billable of record.billables) {
+      // Travel is billed against the worker's kilometres, not a service, so it carries no item code.
+      const itemCode =
+        billable.label === TRAVEL_LABEL
+          ? ""
+          : (itemCodes.get(String(record.serviceId)) ?? "");
+      const key = `${billable.label}|${billable.unit}|${billable.rateCents}|${itemCode}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.quantity = roundQuantity(
+          existing.quantity + billable.quantity
+        );
+        existing.subtotalCents += billable.subtotalCents;
+      } else {
+        groups.set(key, {
+          label: billable.label,
+          unit: billable.unit,
+          quantity: billable.quantity,
+          rateCents: billable.rateCents,
+          subtotalCents: billable.subtotalCents,
+          recordId: record._id,
+          itemCode,
+        });
+      }
+    }
+  }
+  return [...groups.values()];
+}
+
+const linesOf = (invoice: InvoiceDoc) =>
+  invoice.lines.map(line => ({
+    label: line.label,
+    unit: line.unit,
+    quantity: line.quantity,
+    rate: fromCents(line.rateCents),
+    subtotal: fromCents(line.subtotalCents),
+    recordId: line.recordId,
+    itemCode: line.itemCode ?? "",
+  }));
 
 export function toInvoiceDTO(
   invoice: InvoiceDoc,
@@ -65,19 +151,28 @@ export function toInvoiceDTO(
       phone: invoice.supplier?.phone ?? "",
       email: invoice.supplier?.email ?? "",
     },
+    reference: invoice.reference ?? "",
+    bank: bankOf(invoice),
+    share: {
+      enabled: Boolean(invoice.share?.enabled && invoice.share?.token),
+      url:
+        invoice.share?.enabled && invoice.share?.token
+          ? shareUrlFor(invoice.share.token)
+          : null,
+      createdAt: iso(invoice.share?.createdAt ?? null),
+    },
+    xero: {
+      state: invoice.xero?.state ?? "none",
+      message: invoice.xero?.message ?? "",
+      syncedAt: iso(invoice.xero?.syncedAt ?? null),
+      url: invoice.xero?.url || null,
+    },
     issue: invoice.issue,
     due: invoice.due,
     paymentTermsDays: invoice.paymentTermsDays,
     status: invoice.status,
     overdue: invoice.status === "Sent" && invoice.due < today,
-    lines: invoice.lines.map(line => ({
-      label: line.label,
-      unit: line.unit,
-      quantity: line.quantity,
-      rate: fromCents(line.rateCents),
-      subtotal: fromCents(line.subtotalCents),
-      recordId: line.recordId,
-    })),
+    lines: linesOf(invoice),
     subtotal: fromCents(invoice.subtotalCents),
     tax: fromCents(invoice.taxCents),
     taxRatePct: invoice.taxRatePct ?? 0,
@@ -235,16 +330,19 @@ export async function createInvoice(
   records.sort(
     (a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start)
   );
-  const lines = records.flatMap(record =>
-    record.billables.map(line => ({
-      label: `${line.label} — ${shortDate(record.date)}`,
-      unit: line.unit,
-      quantity: line.quantity,
-      rateCents: line.rateCents,
-      subtotalCents: line.subtotalCents,
-      recordId: record._id,
-    }))
+  // The code is copied now, so changing a service's code later never rewrites an issued invoice.
+  const services = await Service.find({
+    _id: { $in: [...new Set(records.map(record => String(record.serviceId)))] },
+  })
+    .select("supportItemNumber")
+    .lean<Array<Pick<ServiceDoc, "_id" | "supportItemNumber">>>();
+  const itemCodes = new Map(
+    services.map(service => [
+      String(service._id),
+      (service.supportItemNumber ?? "").trim(),
+    ])
   );
+  const lines = groupLines(records, itemCodes);
   const subtotalCents = lines.reduce(
     (total, line) => total + line.subtotalCents,
     0
@@ -289,7 +387,7 @@ export async function createInvoice(
           clientId: participant._id,
           recordIds: records.map(record => record._id),
           status: "Draft",
-          title: workspace.gst?.registered ? "Tax invoice" : "Invoice",
+          title: workspace.gst?.registered ? "Tax Invoice" : "Invoice",
           recipient,
           recipientEmail,
           billTo: {
@@ -304,6 +402,15 @@ export async function createInvoice(
             address: workspace.address ?? "",
             phone: workspace.phone ?? "",
             email: workspace.email ?? "",
+          },
+          reference:
+            input.reference?.trim() ||
+            `${participant.name} – NDIS ${participant.ndis}`,
+          bank: {
+            accountName: workspace.bank?.accountName ?? "",
+            bsb: workspace.bank?.bsb ?? "",
+            accountNumber: workspace.bank?.accountNumber ?? "",
+            payInstruction: workspace.bank?.payInstruction ?? "",
           },
           issue,
           due: addDays(issue, paymentTermsDays),
@@ -381,11 +488,101 @@ export async function updateDraftInvoice(
       paymentTermsDays: terms,
       due: addDays(issue, terms),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.reference !== undefined ? { reference: input.reference } : {}),
     },
     "updated",
     ctx
   );
   return getInvoice(id);
+}
+
+/**
+ * Turns the public link on or off. The token is minted once and kept, so re-enabling restores
+ * the same address; turning it off is what revokes access. A voided invoice cannot be shared.
+ */
+export async function setInvoiceShare(
+  id: string,
+  enabled: boolean,
+  ctx: RequestContext
+): Promise<InvoiceDTO> {
+  const current = await getInvoiceDoc(id);
+  if (enabled && current.status === "Void")
+    throw errors.invalidState("A voided invoice cannot be shared.");
+  const token = current.share?.token ?? randomToken(24);
+  await Invoice.updateOne(
+    { _id: id },
+    {
+      $set: {
+        "share.enabled": enabled,
+        "share.token": token,
+        "share.createdAt": current.share?.createdAt ?? new Date(),
+      },
+      $inc: { rev: 1 },
+    }
+  );
+  await logActivity({
+    actor: ctx.actor,
+    action: enabled ? "invoice.link_enabled" : "invoice.link_revoked",
+    entityType: "invoice",
+    entityId: id,
+    participantId: current.clientId,
+    summary: enabled
+      ? `turned on the public link for invoice ${id}`
+      : `revoked the public link for invoice ${id}`,
+    ip: ctx.ip,
+  });
+  return getInvoice(id);
+}
+
+/** Looks an invoice up by its share token. Used by the pages that need no sign-in. */
+export async function invoiceByShareToken(token: string): Promise<InvoiceDoc> {
+  const invoice = await Invoice.findOne({
+    "share.token": token,
+    "share.enabled": true,
+  }).lean<InvoiceDoc>();
+  // A revoked or unknown link must look the same, so a token cannot be probed for.
+  if (!invoice) throw errors.notFound("Invoice");
+  return invoice;
+}
+
+/** Only what a payer needs: no record ids, no history, no internal notes. */
+export async function publicInvoice(token: string): Promise<PublicInvoiceDTO> {
+  const invoice = await invoiceByShareToken(token);
+  const today = await workspaceToday();
+  return {
+    id: invoice._id,
+    title: invoice.title,
+    status: invoice.status,
+    overdue: invoice.status === "Sent" && invoice.due < today,
+    reference: invoice.reference ?? "",
+    recipient: invoice.recipient ?? "",
+    billTo: {
+      name: invoice.billTo?.name ?? "",
+      address: invoice.billTo?.address ?? "",
+      ndis: invoice.billTo?.ndis ?? "",
+    },
+    supplier: {
+      name: invoice.supplier?.name ?? "",
+      legalName: invoice.supplier?.legalName ?? "",
+      abn: invoice.supplier?.abn ?? "",
+      address: invoice.supplier?.address ?? "",
+      phone: invoice.supplier?.phone ?? "",
+      email: invoice.supplier?.email ?? "",
+    },
+    issue: invoice.issue,
+    due: invoice.due,
+    paymentTermsDays: invoice.paymentTermsDays,
+    lines: linesOf(invoice),
+    subtotal: fromCents(invoice.subtotalCents),
+    tax: fromCents(invoice.taxCents),
+    taxRatePct: invoice.taxRatePct ?? 0,
+    total: fromCents(invoice.totalCents),
+    notes: invoice.notes ?? "",
+    footer: invoice.footer ?? "",
+    paymentInstructions: invoice.paymentInstructions ?? "",
+    bank: bankOf(invoice),
+    paidOn: invoice.paidOn ?? null,
+  };
 }
 
 export async function markReady(
@@ -457,6 +654,7 @@ export async function markSent(
     ctx,
     emailedTo ? `Emailed to ${emailedTo}` : undefined
   );
+  await queueXeroSync(id);
   await logActivity({
     actor: ctx.actor,
     action: "invoice.sent",
@@ -490,6 +688,7 @@ export async function markPaid(
     ctx,
     input.reference ? `Reference ${input.reference}` : undefined
   );
+  await queueXeroSync(id);
   await logActivity({
     actor: ctx.actor,
     action: "invoice.paid",
@@ -559,6 +758,7 @@ async function releaseInvoice(
       if (!result.matchedCount) throw errors.stale();
     }
   });
+  if (mode === "void") await queueXeroSync(id);
   await logActivity({
     actor: ctx.actor,
     action: mode === "delete" ? "invoice.deleted" : "invoice.voided",

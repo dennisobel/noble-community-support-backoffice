@@ -22,6 +22,8 @@ export const invoiceCreateSchema = z.object({
   issueDate: ymd.optional(),
   paymentTermsDays: z.number().int().min(0).max(120).optional(),
   notes: text(1000).optional(),
+  /** Defaults to the participant and their NDIS number when left blank. */
+  reference: text(200).optional(),
 });
 export type InvoiceCreateInput = z.input<typeof invoiceCreateSchema>;
 
@@ -29,8 +31,17 @@ export const invoiceUpdateSchema = z.object({
   issueDate: ymd.optional(),
   paymentTermsDays: z.number().int().min(0).max(120).optional(),
   notes: text(1000).optional(),
+  reference: text(200).optional(),
   rev,
 });
+
+/** Turns the public link on or off. Turning it off invalidates every copy already sent. */
+export const invoiceShareSchema = z.object({ enabled: z.boolean() });
+
+/** The share token: long enough that it cannot be guessed. */
+export const shareTokenParam = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{24,64}$/, { error: "Invalid invoice link." });
 
 export const invoiceMarkSentSchema = z.object({
   sendEmail: z.boolean().optional(),

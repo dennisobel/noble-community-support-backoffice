@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams, useSearch } from "wouter";
+import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import type { ServiceRecordDTO } from "@shared/dto";
 import {
   NOTE_SECTIONS,
@@ -229,7 +230,9 @@ export default function RecordEditorPage() {
         rateCents: toCents(service.rate),
         transportEnabled: service.transport,
       },
-      toCents(workspace.data?.providerTravelRate ?? 1)
+      toCents(
+        workspace.data?.providerTravelRate ?? DEFAULT_TRAVEL_RATE_CENTS / 100
+      )
     ).map(line => ({
       label: line.label,
       unit: line.unit,
@@ -666,7 +669,10 @@ export default function RecordEditorPage() {
                 />
                 <p className="field-help">
                   {service?.transport
-                    ? `Actual provider travel; billed at ${money(workspace.data?.providerTravelRate ?? 1)}/km as a separate line.`
+                    ? `Actual provider travel; billed at ${money(
+                        workspace.data?.providerTravelRate ??
+                          DEFAULT_TRAVEL_RATE_CENTS / 100
+                      )}/km as a separate line.`
                     : "This service does not include transport, so kilometres are not billed."}
                 </p>
                 <FieldError message={fieldErrors.km} />

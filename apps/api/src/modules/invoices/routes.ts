@@ -6,6 +6,7 @@ import {
   invoiceMarkPaidSchema,
   invoiceMarkSentSchema,
   invoiceUpdateSchema,
+  invoiceShareSchema,
   invoiceVoidSchema,
 } from "@shared/schemas/invoices";
 import { contentDisposition, ctx, parse } from "../../lib/http";
@@ -20,6 +21,7 @@ import {
   markPaid,
   markReady,
   markSent,
+  setInvoiceShare,
   updateDraftInvoice,
   voidInvoice,
 } from "./service";
@@ -62,6 +64,11 @@ export function invoicesRouter(): Router {
     );
     res.setHeader("Cache-Control", "private, no-store");
     res.send(buffer);
+  });
+  /* The public link a plan manager can open without signing in. */
+  router.post("/:id/share", async (req, res) => {
+    const { enabled } = parse(invoiceShareSchema, req.body ?? {});
+    res.json(await setInvoiceShare(invoiceId(req), enabled, ctx(req)));
   });
   router.post("/:id/mark-ready", async (req, res) => {
     res.json(

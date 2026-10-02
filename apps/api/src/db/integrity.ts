@@ -1,3 +1,4 @@
+import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import { NOTE_SECTIONS } from "@shared/enums";
 import { computeBillables } from "@shared/logic/billing";
 import { computeBudgetMetrics } from "@shared/logic/budget";
@@ -320,7 +321,7 @@ export async function checkIntegrity(): Promise<IntegrityReport> {
         quantity: record.quantity,
       },
       service,
-      workspace.providerTravelRateCents ?? 100
+      workspace.providerTravelRateCents ?? DEFAULT_TRAVEL_RATE_CENTS
     );
     if (JSON.stringify(expected) !== JSON.stringify(record.billables))
       problem(
@@ -477,17 +478,21 @@ export async function checkIntegrity(): Promise<IntegrityReport> {
         problem(
           `${label} includes ${id}, which is ${record.status.toLowerCase()} and not on this invoice.`
         );
-      const lines = invoice.lines.filter(line => line.recordId === id);
-      const total = lines.reduce((sum, line) => sum + line.subtotalCents, 0);
-      if (total !== record.totalCents)
-        problem(
-          `${label} bills ${id} at a different amount than the record total.`
-        );
-      linesTotal += total;
+      // Lines are grouped by support type and rate, so several records can share one line.
+      // The amounts therefore have to agree in total rather than record by record.
+      linesTotal += record.totalCents;
     }
+    const billed = invoice.lines.reduce(
+      (sum, line) => sum + line.subtotalCents,
+      0
+    );
+    if (billed !== linesTotal)
+      problem(
+        `${label} bills ${(billed / 100).toFixed(2)} but its records total ${(linesTotal / 100).toFixed(2)}.`
+      );
     if (invoice.lines.some(line => !invoice.recordIds.includes(line.recordId)))
       problem(`${label} has lines for records that are not on the invoice.`);
-    if (invoice.subtotalCents !== linesTotal)
+    if (invoice.subtotalCents !== billed)
       problem(`${label} subtotal does not equal its lines.`);
     if (invoice.totalCents !== invoice.subtotalCents + invoice.taxCents)
       problem(`${label} total does not equal subtotal plus tax.`);

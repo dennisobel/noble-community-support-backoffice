@@ -28,9 +28,11 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatDateTime, timeAgo } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
+import XeroSettings from "./XeroSettings";
 
 const SECTIONS = [
   { slug: "workspace", label: "Workspace" },
+  { slug: "accounting", label: "Accounting (Xero)" },
   { slug: "profile", label: "My profile" },
   { slug: "notifications", label: "Notifications" },
   { slug: "privacy", label: "Privacy & access" },
@@ -79,6 +81,7 @@ function WorkspaceSettings() {
         timezone: form.timezone,
         gst: form.gst,
         invoice: form.invoice,
+        bank: form.bank,
         providerTravelRate: Number(form.providerTravelRate),
         budgetCategories: form.budgetCategories,
       });
@@ -214,8 +217,75 @@ function WorkspaceSettings() {
               }
             />
           </label>
+          <div className="sm:col-span-2">
+            <h3 className="text-[11px] font-bold uppercase tracking-[.06em] text-[#687982]">
+              Bank details
+            </h3>
+            <p className="mt-1 text-[11px] leading-4 text-[#687982]">
+              Printed on every invoice so a plan manager can pay it. An invoice
+              keeps a copy of these as it was issued, so changing them here
+              never alters an invoice already sent.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="label sm:col-span-2">
+                Account name
+                <input
+                  className="input mt-1"
+                  value={form.bank.accountName}
+                  onChange={event =>
+                    set("bank", {
+                      ...form.bank,
+                      accountName: event.target.value,
+                    })
+                  }
+                  placeholder="NOBLE COMMUNITY SUPPORT PTY LTD"
+                />
+              </label>
+              <label className="label">
+                BSB
+                <input
+                  className="input mt-1"
+                  inputMode="numeric"
+                  value={form.bank.bsb}
+                  onChange={event =>
+                    set("bank", { ...form.bank, bsb: event.target.value })
+                  }
+                  placeholder="067873"
+                />
+              </label>
+              <label className="label">
+                Account number
+                <input
+                  className="input mt-1"
+                  inputMode="numeric"
+                  value={form.bank.accountNumber}
+                  onChange={event =>
+                    set("bank", {
+                      ...form.bank,
+                      accountNumber: event.target.value,
+                    })
+                  }
+                  placeholder="26209068"
+                />
+              </label>
+              <label className="label sm:col-span-2">
+                What the payer should reference
+                <input
+                  className="input mt-1"
+                  value={form.bank.payInstruction}
+                  onChange={event =>
+                    set("bank", {
+                      ...form.bank,
+                      payInstruction: event.target.value,
+                    })
+                  }
+                  placeholder="Invoice number or participant name"
+                />
+              </label>
+            </div>
+          </div>
           <label className="label sm:col-span-2">
-            Payment instructions
+            Extra payment instructions
             <textarea
               className="textarea mt-1 !min-h-[60px]"
               value={form.invoice.paymentInstructions}
@@ -225,7 +295,7 @@ function WorkspaceSettings() {
                   paymentInstructions: event.target.value,
                 })
               }
-              placeholder="e.g. BSB 000-000, Account 00000000, reference the invoice number"
+              placeholder="Anything beyond the bank details above."
             />
           </label>
           <label className="label sm:col-span-2">
@@ -661,6 +731,7 @@ export default function SettingsPage() {
         </nav>
         <div>
           {section === "workspace" && <WorkspaceSettings />}
+          {section === "accounting" && <XeroSettings />}
           {section === "profile" && <ProfileSettings />}
           {section === "notifications" && <NotificationSettings />}
           {section === "privacy" && <PrivacySettings />}

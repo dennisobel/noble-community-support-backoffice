@@ -17,6 +17,7 @@ import {
   roundQuantity,
   toCents,
 } from "@shared/logic/money";
+import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import { durationHours } from "@shared/logic/time";
 import { MESSAGES } from "@shared/messages";
 import type {
@@ -219,7 +220,7 @@ async function billablesFor(
       rateCents: service.rateCents,
       transportEnabled: service.transportEnabled,
     },
-    workspace.providerTravelRateCents ?? 100
+    workspace.providerTravelRateCents ?? DEFAULT_TRAVEL_RATE_CENTS
   );
   return { billables: lines, totalCents: sumCents(lines) };
 }

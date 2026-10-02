@@ -41,6 +41,28 @@ export const workspacePatchSchema = z.object({
     })
     .partial()
     .optional(),
+  bank: z
+    .object({
+      accountName: text(160),
+      // Australian BSB: six digits, usually written 123-456.
+      bsb: z
+        .string()
+        .trim()
+        .transform(value => value.replace(/[^0-9]/g, ""))
+        .refine(value => value.length === 0 || value.length === 6, {
+          error: "Enter the six-digit BSB.",
+        }),
+      accountNumber: z
+        .string()
+        .trim()
+        .transform(value => value.replace(/[^0-9]/g, ""))
+        .refine(value => value.length === 0 || value.length <= 10, {
+          error: "Enter a valid account number.",
+        }),
+      payInstruction: text(160),
+    })
+    .partial()
+    .optional(),
   providerTravelRate: money(
     "Enter a valid non-negative travel rate."
   ).optional(),

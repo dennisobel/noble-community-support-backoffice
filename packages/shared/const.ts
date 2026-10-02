@@ -36,3 +36,10 @@ export const AUDIO_UPLOAD = {
 } as const;
 
 export const DEFAULT_TIMEZONE = "Australia/Adelaide";
+
+/**
+ * What a kilometre of provider travel is claimable at, in cents. One place so the API default, the
+ * form hints and the fallbacks can never disagree. Each workspace can change its own rate in
+ * Settings; this is only what a new workspace starts with.
+ */
+export const DEFAULT_TRAVEL_RATE_CENTS = 99;

@@ -23,6 +23,10 @@ import {
 import { NotifyProvider } from "@/lib/notify";
 import NotFound from "@/pages/NotFound";
 
+const PublicInvoicePage = lazy(
+  () => import("@/features/invoices/PublicInvoicePage")
+);
+
 const StaffShell = lazy(() => import("@/features/staff-portal/StaffShell"));
 
 const queryClient = new QueryClient({
@@ -47,6 +51,12 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/signup" component={SignupPage} />
       <Route path="/staff-signup" component={StaffSignupPage} />
+      {/* Opened from a share link: no session, the token is the credential. */}
+      <Route path="/invoice/:token">
+        <Suspense fallback={<FullScreenLoader label="Loading the invoice…" />}>
+          <PublicInvoicePage />
+        </Suspense>
+      </Route>
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path={/^\/app(?:\/.*)?$/}>

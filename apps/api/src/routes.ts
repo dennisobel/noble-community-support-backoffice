@@ -7,6 +7,7 @@ import { budgetsRouter } from "./modules/budgets/routes";
 import { dashboardRouter } from "./modules/dashboard/service";
 import { documentsRouter } from "./modules/documents/routes";
 import { invoicesRouter } from "./modules/invoices/routes";
+import { publicInvoicesRouter } from "./modules/invoices/public";
 import { notificationsRouter } from "./modules/notifications/service";
 import { participantsRouter } from "./modules/participants/routes";
 import {
@@ -30,6 +31,7 @@ import { settingsRouter } from "./modules/settings/routes";
 import { staffRouter } from "./modules/staff/routes";
 import { getMeta, healthRouter } from "./modules/system/routes";
 import { voiceRouter } from "./modules/voice/routes";
+import { xeroCallback, xeroRouter } from "./modules/xero/routes";
 
 /** Every route under /api/v1. Only /health, /meta and the public /auth endpoints are reachable without a session. */
 export function apiRouter(): Router {
@@ -42,6 +44,10 @@ export function apiRouter(): Router {
     res.json(await getMeta());
   });
   router.use("/auth", authRouter());
+  /* Share links: no session, the token in the URL is the only credential. */
+  router.use("/public", publicInvoicesRouter());
+  /* Xero sends the browser back here after sign-in: no session, the one-time state in the URL is the credential. */
+  router.get("/integrations/xero/callback", xeroCallback);
 
   /*
    * Worker portal, mounted before the back office. The Admin router below is mounted at the
@@ -62,6 +68,7 @@ export function apiRouter(): Router {
   secured.use("/service-records", recordsRouter());
   secured.use("/roster", rosterRouter());
   secured.use("/invoices", invoicesRouter());
+  secured.use("/integrations/xero", xeroRouter());
   secured.use("/voice-notes", voiceRouter());
   secured.use("/activity", activityRouter());
   secured.use("/dashboard", dashboardRouter());

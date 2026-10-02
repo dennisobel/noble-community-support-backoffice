@@ -4,6 +4,9 @@ import { DEFAULT_TIMEZONE } from "@shared/const";
 import { isValidTimeZone } from "@shared/logic/time";
 
 const DEV_JWT_SECRET = "dev-only-insecure-secret-change-me-0123456789abcdef";
+// The least Noble needs from a Xero organisation: invoices, payments, contacts and the chart of accounts.
+const DEFAULT_XERO_SCOPES =
+  "offline_access accounting.invoices accounting.payments accounting.contacts accounting.settings";
 
 const bool = z
   .enum(["true", "false", "1", "0", "yes", "no", ""])
@@ -73,6 +76,12 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: optionalString,
   NOTE_MODEL: z.string().default("claude-opus-5-5"),
   NOTE_FALLBACKS: bool.default(true),
+
+  XERO_CLIENT_ID: optionalString,
+  XERO_CLIENT_SECRET: optionalString,
+  XERO_REDIRECT_URI: optionalString,
+  XERO_SCOPES: z.string().default(DEFAULT_XERO_SCOPES),
+  XERO_TOKEN_KEY: optionalString,
 
   SEED_DEMO_DATA: bool.default(false),
   DEMO_ENABLED: bool.default(false),
@@ -149,6 +158,18 @@ function buildConfig(env: z.output<typeof envSchema>) {
       model: env.NOTE_MODEL,
       fallbacks: env.NOTE_FALLBACKS,
     },
+    xero: {
+      clientId: env.XERO_CLIENT_ID,
+      clientSecret: env.XERO_CLIENT_SECRET,
+      configured: Boolean(env.XERO_CLIENT_ID && env.XERO_CLIENT_SECRET),
+      /** Must match, character for character, the redirect URI registered on the Xero app. */
+      redirectUri:
+        env.XERO_REDIRECT_URI ??
+        `${env.APP_URL.replace(/\/+$/, "")}/api/v1/integrations/xero/callback`,
+      scopes: env.XERO_SCOPES.split(/[\s,]+/).filter(Boolean),
+      /** Seals the saved Xero tokens in the database. Falls back to the JWT secret. */
+      tokenKey: env.XERO_TOKEN_KEY,
+    },
     demo: {
       seed: env.SEED_DEMO_DATA,
       enabled: env.DEMO_ENABLED,
@@ -204,6 +225,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   }
   if (cfg.notes.provider === "anthropic" && !cfg.notes.apiKey) {
     throw new Error("NOTE_PROVIDER=anthropic requires ANTHROPIC_API_KEY.");
+  }
+  if (Boolean(env.XERO_CLIENT_ID) !== Boolean(env.XERO_CLIENT_SECRET)) {
+    throw new Error("Set XERO_CLIENT_ID and XERO_CLIENT_SECRET together.");
   }
   return cfg;
 }

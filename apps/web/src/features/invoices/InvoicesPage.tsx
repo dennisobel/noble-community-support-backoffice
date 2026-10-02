@@ -44,6 +44,7 @@ function InvoiceBuilder({
   const create = useCreateInvoice();
   const clients = participants.data?.items ?? [];
   const [clientId, setClientId] = useState(initialClient ?? "");
+  const [reference, setReference] = useState("");
   const [selection, setSelection] = useState<string[]>([]);
   const [issue, setIssue] = useState("");
   const [terms, setTerms] = useState<number | null>(null);
@@ -86,6 +87,7 @@ function InvoiceBuilder({
         recordIds: selected.map(record => record.id),
         issueDate,
         paymentTermsDays: paymentTerms,
+        reference: reference.trim(),
       });
       notify(`Invoice ${invoice.id} created from approved records.`);
       navigate(`/app/invoices/${invoice.id}`);
@@ -175,6 +177,26 @@ function InvoiceBuilder({
                       Due {prettyDate(addDays(issueDate, paymentTerms))}
                     </p>
                   )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label" htmlFor="invoice-reference">
+                    Reference
+                  </label>
+                  <input
+                    id="invoice-reference"
+                    className="input"
+                    value={reference}
+                    onChange={event => setReference(event.target.value)}
+                    placeholder={
+                      client
+                        ? `${client.name} – NDIS ${client.ndis}`
+                        : "Participant – NDIS number"
+                    }
+                  />
+                  <p className="field-help">
+                    Printed on the invoice. Left blank, it uses the
+                    participant&rsquo;s name and NDIS number.
+                  </p>
                 </div>
               </div>
             </Panel>

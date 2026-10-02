@@ -1,6 +1,8 @@
 import type { Express } from "express";
+import { Types } from "mongoose";
 import type request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Participant } from "../src/models";
 import { API, signedInAgent, startTestApp, stopTestApp } from "./helpers";
 import { createParticipant, createService, createStaff } from "./fixtures";
 
@@ -16,6 +18,8 @@ afterAll(stopTestApp);
 describe("workspace settings and preferences", () => {
   it("reads and updates the workspace profile", async () => {
     const before = await agent.get(`${API}/settings/workspace`);
+    // A new workspace starts with provider travel claimable at $0.99 per kilometre.
+    expect(before.body.providerTravelRate).toBe(0.99);
     expect(before.body.budgetCategories).toEqual([
       "Community participation",
       "Daily living skills",
@@ -24,12 +28,12 @@ describe("workspace settings and preferences", () => {
     const updated = await agent.patch(`${API}/settings/workspace`).send({
       legalName: "Noble Community Support Pty Ltd",
       abn: "12 345 678 901",
-      providerTravelRate: 0.99,
+      providerTravelRate: 1.25,
       invoice: { prefix: "NCS", defaultPaymentTermsDays: 30 },
     });
     expect(updated.status).toBe(200);
     expect(updated.body.abn).toBe("12345678901");
-    expect(updated.body.providerTravelRate).toBe(0.99);
+    expect(updated.body.providerTravelRate).toBe(1.25);
     expect(updated.body.invoice).toMatchObject({
       prefix: "NCS",
       defaultPaymentTermsDays: 30,
@@ -40,7 +44,7 @@ describe("workspace settings and preferences", () => {
     expect(invalid.status).toBe(422);
     expect(invalid.body.error.message).toBe("Enter the 11-digit ABN.");
     await agent.patch(`${API}/settings/workspace`).send({
-      providerTravelRate: 1,
+      providerTravelRate: 0.99,
       invoice: { prefix: "INV", defaultPaymentTermsDays: 14 },
     });
   });
@@ -219,6 +223,92 @@ describe("participants", () => {
       .post(`${API}/participants/${created.id}/restore`)
       .send({});
     expect(restored.body.status).toBe("Active");
+  });
+
+  it("records an optional NDIS support coordinator", async () => {
+    const withCoordinator = await createParticipant(agent, {
+      coordinatorName: "Jordan Lee",
+      coordinatorOrg: "Anchor Support Coordination",
+      coordinatorPhone: "08 5550 0199",
+      coordinatorEmail: "Jordan.Lee@Anchor.example",
+    });
+    expect(withCoordinator).toMatchObject({
+      coordinatorName: "Jordan Lee",
+      coordinatorOrg: "Anchor Support Coordination",
+      coordinatorPhone: "08 5550 0199",
+      coordinatorEmail: "jordan.lee@anchor.example",
+    });
+    const fetched = await agent.get(
+      `${API}/participants/${withCoordinator.id}`
+    );
+    expect(fetched.body.coordinatorName).toBe("Jordan Lee");
+
+    const invalid = await agent.post(`${API}/participants`).send({
+      name: "A",
+      preferred: "A",
+      ndis: "431 000 002",
+      dob: "2000-01-01",
+      phone: "1",
+      email: "a@b.co",
+      address: "x",
+      emergencyName: "x",
+      emergencyPhone: "1",
+      coordinatorEmail: "not-an-email",
+    });
+    expect(invalid.status).toBe(422);
+    expect(invalid.body.error.details).toEqual([
+      expect.objectContaining({ path: "coordinatorEmail" }),
+    ]);
+
+    // A coordinator is optional, and can be added, changed and cleared on an existing profile.
+    const without = await createParticipant(agent);
+    expect(without).toMatchObject({
+      coordinatorName: "",
+      coordinatorOrg: "",
+      coordinatorPhone: "",
+      coordinatorEmail: "",
+    });
+    const added = await agent.patch(`${API}/participants/${without.id}`).send({
+      coordinatorName: "Sam Rivera",
+      coordinatorOrg: "Beacon Coordination",
+      rev: without.rev,
+    });
+    expect(added.status).toBe(200);
+    expect(added.body).toMatchObject({
+      coordinatorName: "Sam Rivera",
+      coordinatorOrg: "Beacon Coordination",
+      coordinatorPhone: "",
+    });
+    const cleared = await agent
+      .patch(`${API}/participants/${without.id}`)
+      .send({ coordinatorName: "", coordinatorOrg: "", rev: added.body.rev });
+    expect(cleared.body).toMatchObject({
+      coordinatorName: "",
+      coordinatorOrg: "",
+    });
+  });
+
+  it("reads participants saved before coordinators existed", async () => {
+    const created = await createParticipant(agent);
+    await Participant.collection.updateOne(
+      { _id: new Types.ObjectId(created.id) },
+      {
+        $unset: {
+          coordinatorName: "",
+          coordinatorOrg: "",
+          coordinatorPhone: "",
+          coordinatorEmail: "",
+        },
+      }
+    );
+    const fetched = await agent.get(`${API}/participants/${created.id}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject({
+      coordinatorName: "",
+      coordinatorOrg: "",
+      coordinatorPhone: "",
+      coordinatorEmail: "",
+    });
   });
 
   it("returns 404 for unknown ids and 401 after logout", async () => {

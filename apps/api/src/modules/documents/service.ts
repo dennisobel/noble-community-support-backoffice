@@ -28,6 +28,7 @@ import {
   type ParticipantDoc,
 } from "../../models";
 import { getParticipantDoc } from "../participants/service";
+import { xeroConnected } from "../xero/service";
 
 const MONTHS = [
   "January",
@@ -368,6 +369,7 @@ export async function organisationTree(): Promise<TreeNode> {
   const business = ORGANISATION_FOLDERS.filter(
     folder => folder.group === "business"
   );
+  const xero = await xeroConnected();
   const tree: TreeNode = {
     id: "org-root",
     title: "Organisation files",
@@ -400,10 +402,12 @@ export async function organisationTree(): Promise<TreeNode> {
           {
             id: "xero-records",
             title: "Xero / accounting records",
-            description: "External accounting records · Xero is not connected.",
+            description: xero
+              ? "External accounting records · kept in Xero."
+              : "External accounting records · Xero is not connected.",
             kind: "external",
-            badge: "Not connected",
-            badgeTone: "external",
+            badge: xero ? "Connected" : "Not connected",
+            badgeTone: xero ? "ok" : "external",
           },
           {
             id: "org-finance",

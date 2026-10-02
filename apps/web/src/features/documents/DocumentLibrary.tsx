@@ -462,7 +462,7 @@ export default function DocumentLibrary({
     }
     if (item.kind === "external")
       return notify(
-        "Xero is not connected. Keep accounting records in your finance system or the Finance documents folder.",
+        "Accounting records live in Xero. Connect or manage it under Settings → Accounting (Xero); other finance files go in the Finance documents folder.",
         "info"
       );
     if (item.kind === "record" && item.recordId)
@@ -565,7 +565,7 @@ export default function DocumentLibrary({
         <Info size={13} className="mr-1.5 inline" />
         {participant
           ? "Progress notes and travel entries are linked service records, not duplicate files. Uploaded files are stored securely and only available to signed-in staff."
-          : "Organisation files only. Client folders are managed from each client profile. Xero is not connected."}
+          : "Organisation files only. Client folders are managed from each client profile. Accounting is managed under Settings → Accounting (Xero)."}
       </div>
 
       {items.length ? (

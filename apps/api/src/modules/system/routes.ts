@@ -5,6 +5,7 @@ import { config } from "../../config";
 import { emailEnabled } from "../../lib/mailer";
 import { storage } from "../../lib/storage";
 import { getWorkspace } from "../../lib/workspace";
+import { xeroConnected } from "../xero/service";
 import { todayIn } from "@shared/logic/time";
 
 export const APP_VERSION = process.env.APP_VERSION ?? "1.0.0";
@@ -46,7 +47,7 @@ export async function getMeta(): Promise<MetaDTO> {
       email: emailEnabled(),
       sttProvider: cfg.stt.provider,
       noteProvider: cfg.notes.provider,
-      xero: false,
+      xero: await xeroConnected(),
     },
   };
 }

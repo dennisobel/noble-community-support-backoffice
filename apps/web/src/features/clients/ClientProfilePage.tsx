@@ -78,6 +78,12 @@ export default function ClientProfilePage() {
   const client = participantQuery.data;
   const clientRecords = records.data?.items ?? [];
   const active = client.status === "Active";
+  const coordinator = [client.coordinatorName, client.coordinatorOrg]
+    .filter(Boolean)
+    .join(" · ");
+  const coordinatorContact = [client.coordinatorPhone, client.coordinatorEmail]
+    .filter(Boolean)
+    .join(" · ");
 
   const toggleKyc = async (key: string, value: boolean) => {
     try {
@@ -258,6 +264,11 @@ export default function ClientProfilePage() {
                     [
                       "Plan manager email",
                       client.managerEmail || "Not recorded",
+                    ],
+                    ["Support coordinator", coordinator || "Not recorded"],
+                    [
+                      "Coordinator contact",
+                      coordinatorContact || "Not recorded",
                     ],
                   ].map(([label, value]) => (
                     <div key={label}>

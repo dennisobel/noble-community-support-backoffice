@@ -22,6 +22,10 @@ interface FormState {
   manager: string;
   managerEmail: string;
   nominee: string;
+  coordinatorName: string;
+  coordinatorOrg: string;
+  coordinatorPhone: string;
+  coordinatorEmail: string;
   emergencyName: string;
   emergencyPhone: string;
   alertsText: string;
@@ -50,6 +54,10 @@ function initialState(participant?: ParticipantDTO): FormState {
     manager: participant?.manager ?? "",
     managerEmail: participant?.managerEmail ?? "",
     nominee: participant?.nominee ?? "",
+    coordinatorName: participant?.coordinatorName ?? "",
+    coordinatorOrg: participant?.coordinatorOrg ?? "",
+    coordinatorPhone: participant?.coordinatorPhone ?? "",
+    coordinatorEmail: participant?.coordinatorEmail ?? "",
     emergencyName: participant?.emergencyName ?? "",
     emergencyPhone: participant?.emergencyPhone ?? "",
     alertsText: (participant?.alerts ?? []).join("\n"),
@@ -177,6 +185,10 @@ export default function ParticipantFormDrawer({
       manager: form.manager,
       managerEmail: form.managerEmail,
       nominee: form.nominee,
+      coordinatorName: form.coordinatorName,
+      coordinatorOrg: form.coordinatorOrg,
+      coordinatorPhone: form.coordinatorPhone,
+      coordinatorEmail: form.coordinatorEmail,
       emergencyName: form.emergencyName,
       emergencyPhone: form.emergencyPhone,
       alerts: lines(form.alertsText),
@@ -311,7 +323,28 @@ export default function ParticipantFormDrawer({
           </div>
         </Section>
         <Section
-          title="03 · Support, goals & safety"
+          title="03 · NDIS support coordinator"
+          hint="Optional. Record the participant's support coordinator, if they have one."
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {text("coordinatorName", "Coordinator name", {
+              placeholder: "Full name",
+            })}
+            {text("coordinatorOrg", "Organisation", {
+              placeholder: "Support coordination provider",
+            })}
+            {text("coordinatorPhone", "Coordinator phone", {
+              type: "tel",
+              placeholder: "Phone number",
+            })}
+            {text("coordinatorEmail", "Coordinator email", {
+              type: "email",
+              placeholder: "name@example.com",
+            })}
+          </div>
+        </Section>
+        <Section
+          title="04 · Support, goals & safety"
           hint="Practical information needed before services are delivered."
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -367,7 +400,7 @@ export default function ParticipantFormDrawer({
         </Section>
         {!editing && (
           <Section
-            title="04 · KYC & onboarding checklist"
+            title="05 · KYC & onboarding checklist"
             hint="Mark what has been received or confirmed. Unchecked items remain pending in the client file."
             tone="tint"
           >

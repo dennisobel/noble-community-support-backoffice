@@ -2,7 +2,9 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  Copy,
   Download,
+  Link2,
   ExternalLink,
   HandHeart,
   Send,
@@ -10,12 +12,15 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
+import type { InvoiceDTO } from "@shared/dto";
 import { downloadFile, errorMessage, openFile } from "@/api/client";
 import {
   useDeleteInvoice,
   useInvoice,
   useInvoiceAction,
+  useInvoiceShare,
   useMeta,
+  useXeroSyncInvoice,
 } from "@/api/hooks";
 import {
   Btn,
@@ -38,6 +43,171 @@ const ACTION_LABELS: Record<string, string> = {
   voided: "Voided",
 };
 
+/** Where the invoice stands in Xero, with a way to send or retry it. Shown once Xero is connected. */
+function XeroStrip({ invoice }: { invoice: InvoiceDTO }) {
+  const sync = useXeroSyncInvoice();
+  const notify = useNotify();
+  const { state, message, url } = invoice.xero;
+  if (invoice.status === "Draft" || invoice.status === "Ready to send")
+    return null;
+  if (invoice.status === "Void" && state === "none") return null;
+  const send = async () => {
+    try {
+      await sync.mutateAsync(invoice.id);
+    } catch (failure) {
+      notify(errorMessage(failure), "error");
+    }
+  };
+  return (
+    <div
+      role="status"
+      className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-[#e0e6e3] bg-white px-3 py-2 text-xs text-[#4f5f68]"
+    >
+      <span className="font-semibold text-[#1f4350]">Xero</span>
+      {state === "none" && <span>Not in Xero yet.</span>}
+      {state === "queued" && (
+        <span>Sending to Xero…{message ? ` ${message}` : ""}</span>
+      )}
+      {state === "synced" && (
+        <span>
+          In sync
+          {url && (
+            <>
+              {" · "}
+              <a
+                className="font-semibold text-[#277c76]"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open in Xero
+              </a>
+            </>
+          )}
+        </span>
+      )}
+      {state === "error" && (
+        <span className="text-[#9d4942]">
+          {message || "Xero could not take this invoice."}
+        </span>
+      )}
+      {(state === "none" || state === "error") && (
+        <Btn
+          variant="secondary"
+          loading={sync.isPending}
+          onClick={() => void send()}
+        >
+          {state === "none" ? "Send to Xero" : "Retry"}
+        </Btn>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Creates, copies and revokes the read-only link a plan manager can open without signing in.
+ * The link is the only credential, so the modal says plainly what that means.
+ */
+function ShareModal({
+  invoice,
+  onClose,
+}: {
+  invoice: InvoiceDTO;
+  onClose: () => void;
+}) {
+  const share = useInvoiceShare();
+  const notify = useNotify();
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const url = invoice.share.url;
+
+  const set = async (enabled: boolean) => {
+    setError("");
+    try {
+      await share.mutateAsync({ id: invoice.id, enabled });
+      notify(enabled ? "Share link is on." : "Share link revoked.");
+      if (!enabled) onClose();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    }
+  };
+
+  const copy = async () => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Could not copy automatically — select the link and copy it.");
+    }
+  };
+
+  return (
+    <Modal
+      title={`Share invoice ${invoice.id}`}
+      subtitle="A read-only page anyone can open, with no sign-in."
+      onClose={onClose}
+      busy={share.isPending}
+    >
+      <div className="space-y-4 p-5">
+        {url ? (
+          <>
+            <label className="label">
+              Link
+              <input
+                className="input mt-1 font-mono text-[11px]"
+                readOnly
+                value={url}
+                onFocus={event => event.currentTarget.select()}
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Btn onClick={() => void copy()}>
+                <Copy size={14} />
+                {copied ? "Copied" : "Copy link"}
+              </Btn>
+              <Btn
+                variant="secondary"
+                onClick={() => window.open(url, "_blank", "noopener")}
+              >
+                <ExternalLink size={14} />
+                Open
+              </Btn>
+              <Btn
+                variant="quiet"
+                onClick={() => void set(false)}
+                loading={share.isPending}
+              >
+                Revoke link
+              </Btn>
+            </div>
+            <p className="text-[11px] leading-5 text-[#63757d]">
+              Anyone with this link can read the invoice and download the PDF,
+              including the participant&rsquo;s name and NDIS number. It is not
+              listed anywhere and search engines are asked not to index it, but
+              treat it like a password. Revoking stops every copy at once.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs leading-5 text-[#52666f]">
+              Turning this on creates a private link you can email or paste into
+              a message. The person opening it sees this invoice only &mdash; no
+              other client, record or part of the workspace.
+            </p>
+            <Btn onClick={() => void set(true)} loading={share.isPending}>
+              <Link2 size={14} />
+              Create share link
+            </Btn>
+          </>
+        )}
+        <FormAlert message={error} />
+      </div>
+    </Modal>
+  );
+}
+
 export default function InvoicePreviewPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -47,7 +217,7 @@ export default function InvoicePreviewPage() {
   const action = useInvoiceAction();
   const remove = useDeleteInvoice();
   const [modal, setModal] = useState<
-    "send" | "paid" | "void" | "delete" | null
+    "send" | "paid" | "void" | "delete" | "share" | null
   >(null);
   const [sendEmail, setSendEmail] = useState(false);
   const [paidOn, setPaidOn] = useState("");
@@ -116,6 +286,10 @@ export default function InvoicePreviewPage() {
             <Download size={14} />
             Download PDF
           </Btn>
+          <Btn variant="secondary" onClick={() => setModal("share")}>
+            <Link2 size={14} />
+            {invoice.share.enabled ? "Share link" : "Create share link"}
+          </Btn>
           {invoice.status === "Draft" && (
             <>
               <Btn variant="quiet" onClick={() => setModal("delete")}>
@@ -168,6 +342,7 @@ export default function InvoicePreviewPage() {
         </div>
       </div>
       <FormAlert message={modal ? null : error} />
+      {meta.data?.features.xero && <XeroStrip invoice={invoice} />}
 
       <div className="mx-auto max-w-[800px] rounded-sm border border-[#e0e6e3] bg-white p-8 shadow-sm sm:p-12">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -244,12 +419,11 @@ export default function InvoicePreviewPage() {
                 <tr key={index}>
                   <td>
                     {line.label}
-                    <button
-                      className="block text-[10px] text-[#277c76]"
-                      onClick={() => navigate(`/app/records/${line.recordId}`)}
-                    >
-                      {line.recordId}
-                    </button>
+                    {line.itemCode && (
+                      <small className="mt-0.5 block font-mono text-[10px] font-normal text-[#87949a]">
+                        Item {line.itemCode}
+                      </small>
+                    )}
                   </td>
                   <td>
                     {line.quantity} {line.unit.toLowerCase()}
@@ -263,6 +437,22 @@ export default function InvoicePreviewPage() {
             </tbody>
           </table>
         </div>
+        {invoice.recordIds.length > 0 && (
+          <p className="mt-4 text-[11px] leading-5 text-[#687982]">
+            Service records on this invoice:{" "}
+            {invoice.recordIds.map((recordId, index) => (
+              <span key={recordId}>
+                {index > 0 && ", "}
+                <button
+                  className="font-semibold text-[#277c76]"
+                  onClick={() => navigate(`/app/records/${recordId}`)}
+                >
+                  {recordId}
+                </button>
+              </span>
+            ))}
+          </p>
+        )}
         <div className="ml-auto mt-6 w-full max-w-[260px] space-y-2 text-xs">
           <div className="flex justify-between">
             <span>Subtotal</span>
@@ -465,6 +655,9 @@ export default function InvoicePreviewPage() {
             </Btn>
           </div>
         </Modal>
+      )}
+      {modal === "share" && (
+        <ShareModal invoice={invoice} onClose={() => setModal(null)} />
       )}
       {modal === "delete" && (
         <ConfirmModal

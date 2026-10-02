@@ -12,3 +12,4 @@ export * from "./voice";
 export * from "./documents";
 export * from "./settings";
 export * from "./reports";
+export * from "./xero";

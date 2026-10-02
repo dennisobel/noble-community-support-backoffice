@@ -399,6 +399,7 @@ Seventeen collections. Unless noted, each has `createdAt`/`updatedAt`. "Idx" lis
 
 - Identity/contact: `name`, `preferred`, `ndis` (9 digits, unique), `dob`, `phone`, `email`, `address`, `clientNumber` (int from a counter; drives the "Client 001 – AC" folder name).
 - Plan: `planStart`, `planEnd`, `manager` (name or "Self-managed"), `managerEmail?`, `nominee`.
+- NDIS support coordinator (all optional): `coordinatorName?`, `coordinatorOrg?`, `coordinatorPhone?`, `coordinatorEmail?`.
 - Emergency: `emergencyName`, `emergencyPhone`. Lists: `alerts[]`, `goals[]`.
 - Support text: `communication`, `mobility`, `transport`, `support`, `risks`, `allergies`, `preferences`.
 - `kyc` {`serviceAgreement`, `consentForms`, `supportPlan`, `riskInformationReviewed`, `transportRequirementsConfirmed`}, `status` (`Active`/`Archived`), `archivedAt`, `archivedReason`, `createdBy`.

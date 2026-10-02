@@ -84,8 +84,5 @@ export function documentsRouter(): Router {
     await deleteDocument(documentId(req), ctx(req));
     res.status(204).end();
   });
-  router.get("/integrations/xero/status", (_req, res) => {
-    res.json({ connected: false });
-  });
   return router;
 }

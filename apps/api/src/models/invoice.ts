@@ -1,5 +1,10 @@
 import { model, Schema, type Types } from "mongoose";
-import { INVOICE_STATUSES, type InvoiceStatus } from "@shared/enums";
+import {
+  INVOICE_STATUSES,
+  XERO_SYNC_STATES,
+  type InvoiceStatus,
+  type XeroSyncState,
+} from "@shared/enums";
 import {
   actorSchema,
   baseOptions,
@@ -15,6 +20,8 @@ export interface InvoiceLineSub {
   rateCents: number;
   subtotalCents: number;
   recordId: string;
+  /** The service's NDIS support item number, copied when the invoice was raised. */
+  itemCode?: string;
 }
 
 export interface InvoiceDoc {
@@ -33,6 +40,28 @@ export interface InvoiceDoc {
     address: string;
     phone: string;
     email: string;
+  };
+  /** Free text under "Reference"; defaults to the participant and their NDIS number. */
+  reference: string;
+  /** Snapshotted with the invoice, so changing the account later never rewrites an issued one. */
+  bank: {
+    accountName: string;
+    bsb: string;
+    accountNumber: string;
+    payInstruction: string;
+  };
+  /** Read-only public link. The token is the secret; clearing it revokes every copy. */
+  share: { token: string | null; enabled: boolean; createdAt: Date | null };
+  /** Where this invoice stands in Xero. Written only by the Xero sync, and it never bumps `rev`. */
+  xero?: {
+    invoiceId: string | null;
+    state: XeroSyncState;
+    /** Why it needs attention, or a note such as "Paid here, not in Xero". */
+    message: string;
+    syncedAt: Date | null;
+    paymentId: string | null;
+    /** Opens the invoice in Xero. Built once, when the invoice is first linked. */
+    url: string;
   };
   issue: string;
   due: string;
@@ -81,6 +110,26 @@ const invoiceSchema = new Schema<InvoiceDoc>(
       phone: String,
       email: String,
     },
+    reference: { type: String, default: "" },
+    bank: {
+      accountName: { type: String, default: "" },
+      bsb: { type: String, default: "" },
+      accountNumber: { type: String, default: "" },
+      payInstruction: { type: String, default: "" },
+    },
+    share: {
+      token: { type: String, default: null },
+      enabled: { type: Boolean, default: false },
+      createdAt: { type: Date, default: null },
+    },
+    xero: {
+      invoiceId: { type: String, default: null },
+      state: { type: String, enum: XERO_SYNC_STATES, default: "none" },
+      message: { type: String, default: "" },
+      syncedAt: { type: Date, default: null },
+      paymentId: { type: String, default: null },
+      url: { type: String, default: "" },
+    },
     issue: { type: String, required: true },
     due: { type: String, required: true },
     paymentTermsDays: { type: Number, default: 14 },
@@ -93,6 +142,7 @@ const invoiceSchema = new Schema<InvoiceDoc>(
         rateCents: { type: Number, required: true },
         subtotalCents: { type: Number, required: true },
         recordId: { type: String, required: true },
+        itemCode: { type: String, default: "" },
       },
     ],
     subtotalCents: { type: Number, required: true },
@@ -114,6 +164,14 @@ const invoiceSchema = new Schema<InvoiceDoc>(
     rev: { type: Number, default: 0 },
   },
   baseOptions
+);
+// Sparse: only shared invoices hold a token, and it must be unique to be a usable secret.
+invoiceSchema.index(
+  { "share.token": 1 },
+  {
+    unique: true,
+    partialFilterExpression: { "share.token": { $type: "string" } },
+  }
 );
 invoiceSchema.index({ status: 1, issue: -1 });
 invoiceSchema.index({ clientId: 1, issue: -1 });

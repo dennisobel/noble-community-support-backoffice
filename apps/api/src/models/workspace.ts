@@ -1,5 +1,5 @@
 import { model, Schema } from "mongoose";
-import { DEFAULT_TIMEZONE } from "@shared/const";
+import { DEFAULT_TIMEZONE, DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import { DEFAULT_BUDGET_CATEGORIES } from "@shared/enums";
 import { baseOptions } from "./common";
 
@@ -21,6 +21,12 @@ export interface WorkspaceDoc {
     defaultPaymentTermsDays: number;
     footer: string;
     paymentInstructions: string;
+  };
+  bank: {
+    accountName: string;
+    bsb: string;
+    accountNumber: string;
+    payInstruction: string;
   };
   providerTravelRateCents: number;
   budgetCategories: string[];
@@ -45,7 +51,13 @@ export const workspaceDefaults = (timezone = DEFAULT_TIMEZONE) => ({
     footer: "Thank you for your continued partnership.",
     paymentInstructions: "",
   },
-  providerTravelRateCents: 100,
+  bank: {
+    accountName: "",
+    bsb: "",
+    accountNumber: "",
+    payInstruction: "Invoice number or participant name",
+  },
+  providerTravelRateCents: DEFAULT_TRAVEL_RATE_CENTS,
   budgetCategories: [...DEFAULT_BUDGET_CATEGORIES],
 });
 
@@ -70,7 +82,19 @@ const workspaceSchema = new Schema<WorkspaceDoc>(
       footer: { type: String, default: "" },
       paymentInstructions: { type: String, default: "" },
     },
-    providerTravelRateCents: { type: Number, default: 100 },
+    bank: {
+      accountName: { type: String, default: "" },
+      bsb: { type: String, default: "" },
+      accountNumber: { type: String, default: "" },
+      payInstruction: {
+        type: String,
+        default: "Invoice number or participant name",
+      },
+    },
+    providerTravelRateCents: {
+      type: Number,
+      default: DEFAULT_TRAVEL_RATE_CENTS,
+    },
     budgetCategories: {
       type: [String],
       default: () => [...DEFAULT_BUDGET_CATEGORIES],

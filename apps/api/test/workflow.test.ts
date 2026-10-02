@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import type request from "supertest";
+import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addDays } from "@shared/logic/time";
 import { API, signedInAgent, startTestApp, stopTestApp } from "./helpers";
@@ -40,8 +40,8 @@ describe("service record workflow", () => {
     });
     expect(draft.status).toBe("Draft");
     expect(draft.id).toMatch(/^SR-\d{4}$/);
-    // 3 h × $68.30 + 12.4 km × $1.00
-    expect(draft.total).toBe(217.3);
+    // 3 h × $68.30 + 12.4 km × $0.99 (the default travel rate, rounded to the cent: $12.28)
+    expect(draft.total).toBe(217.18);
 
     const noDeclaration = await agent
       .post(`${API}/service-records/${draft.id}/submit`)
@@ -84,7 +84,8 @@ describe("service record workflow", () => {
     const adjusted = await agent
       .patch(`${API}/service-records/${draft.id}/billables`)
       .send({ lines: [{ index: 1, quantity: 10 }], rev: submitted.body.rev });
-    expect(adjusted.body.total).toBe(214.9);
+    // 3 h × $68.30 + 10 km × $0.99
+    expect(adjusted.body.total).toBe(214.8);
 
     const returned = await agent
       .post(`${API}/service-records/${draft.id}/return`)
@@ -219,7 +220,7 @@ describe("budgets", () => {
     });
 
     const noahIds = { ...ids, clientId: participant.id };
-    await approvedRecord(agent, noahIds); // $217.30 used
+    await approvedRecord(agent, noahIds); // $217.18 used
     const pending = await createRecord(agent, noahIds, { km: 0 }); // $204.90 pending
     await agent.post(`${API}/service-records/${pending.id}/submit`).send({});
     const shift = await agent.post(`${API}/roster/shifts`).send({
@@ -240,10 +241,10 @@ describe("budgets", () => {
       (row: { name: string }) => row.name === "Community participation"
     );
     expect(community).toMatchObject({
-      used: 217.3,
+      used: 217.18,
       pending: 204.9,
       committed: 136.6,
-      remaining: 441.2,
+      remaining: 441.32,
     });
 
     const noReason = await agent
@@ -268,7 +269,7 @@ describe("budgets", () => {
     const overCategory = adjusted.body.metrics.categories.find(
       (row: { name: string }) => row.name === "Community participation"
     );
-    expect(overCategory.remaining).toBeCloseTo(-158.8, 2);
+    expect(overCategory.remaining).toBeCloseTo(-158.68, 2);
     const history = await agent.get(
       `${API}/participants/${participant.id}/budget/adjustments`
     );
@@ -383,6 +384,11 @@ describe("rostering", () => {
   });
 });
 
+const byLabelOf = (
+  invoice: { lines: Array<{ label: string; itemCode: string }> },
+  label: string
+) => invoice.lines.find(line => line.label === label)!;
+
 describe("invoicing", () => {
   it("invoices approved records atomically and reverts them when the draft is deleted", async () => {
     const participant = await createParticipant(agent, {
@@ -462,6 +468,166 @@ describe("invoicing", () => {
     });
     const summary = await agent.get(`${API}/invoices/summary`);
     expect(summary.body.paidThisPeriod).toBeGreaterThan(0);
+  });
+
+  it("groups the lines by support type and rate, as a plan manager reads them", async () => {
+    const participant = await createParticipant(agent, {
+      name: "Liam Reed",
+      preferred: "Liam",
+      ndis: "431889120",
+    });
+    const liamIds = { ...ids, clientId: participant.id };
+    // Three visits of the same support at the same rate, on different days.
+    const records = [];
+    for (const date of [addDays(today(), -3), addDays(today(), -2), today()]) {
+      records.push(
+        await approvedRecord(agent, liamIds, {
+          date,
+          start: "09:00",
+          end: "11:00",
+          km: 0,
+        })
+      );
+    }
+    const invoice = await agent.post(`${API}/invoices`).send({
+      clientId: participant.id,
+      recordIds: records.map(record => record.id),
+    });
+    expect(invoice.status).toBe(201);
+    // One line for the three visits: 6 hours, not three separate rows.
+    expect(invoice.body.lines).toHaveLength(1);
+    expect(invoice.body.lines[0].quantity).toBe(6);
+    expect(invoice.body.total).toBeCloseTo(invoice.body.lines[0].subtotal, 2);
+    // The reference defaults to the participant and their NDIS number.
+    expect(invoice.body.reference).toBe("Liam Reed – NDIS 431889120");
+  });
+
+  it("prints each service's NDIS item code on its invoice lines, and not on travel", async () => {
+    const weekday = await createService(agent, {
+      name: "Access Community Social and Rec Activities – W Day",
+      rate: 73.58,
+      supportItemNumber: "04_104_0125_6_1",
+    });
+    const saturday = await createService(agent, {
+      name: "Access Community Social and Rec Activities – Sat",
+      rate: 103.54,
+      supportItemNumber: "04_105_0125_6_1",
+    });
+    const participant = await createParticipant(agent, {
+      name: "Ivy Carter",
+      preferred: "Ivy",
+      ndis: "431100772",
+    });
+    const base = { ...ids, clientId: participant.id };
+    const records = [
+      await approvedRecord(
+        agent,
+        { ...base, serviceId: weekday.id },
+        { km: 10 }
+      ),
+      await approvedRecord(
+        agent,
+        { ...base, serviceId: saturday.id },
+        { km: 10 }
+      ),
+    ];
+    const invoice = await agent.post(`${API}/invoices`).send({
+      clientId: participant.id,
+      recordIds: records.map(record => record.id),
+    });
+    expect(invoice.status).toBe(201);
+
+    const byLabel = (label: string) =>
+      invoice.body.lines.filter(
+        (line: { label: string }) => line.label === label
+      );
+    // Each service keeps its own code, so the two never merge into one line.
+    expect(byLabel(weekday.name)[0].itemCode).toBe("04_104_0125_6_1");
+    expect(byLabel(saturday.name)[0].itemCode).toBe("04_105_0125_6_1");
+    // Travel is claimed per kilometre at the default rate and has no support item of its own.
+    const travel = byLabel("Provider travel");
+    expect(travel).toHaveLength(1);
+    expect(travel[0]).toMatchObject({ itemCode: "", quantity: 20, rate: 0.99 });
+    expect(travel[0].subtotal).toBeCloseTo(19.8, 2);
+
+    // Changing the service's code afterwards must not rewrite the invoice already raised.
+    await agent
+      .patch(`${API}/services/${weekday.id}`)
+      .send({ supportItemNumber: "99_999_9999_9_9", rev: weekday.rev });
+    const reread = await agent.get(`${API}/invoices/${invoice.body.id}`);
+    expect(byLabelOf(reread.body, weekday.name).itemCode).toBe(
+      "04_104_0125_6_1"
+    );
+
+    // And the code reaches the page a payer opens without signing in.
+    const shared = await agent
+      .post(`${API}/invoices/${invoice.body.id}/share`)
+      .send({ enabled: true });
+    const token = shared.body.share.url.split("/invoice/")[1];
+    const guest = await request(app).get(`${API}/public/invoices/${token}`);
+    expect(byLabelOf(guest.body, saturday.name).itemCode).toBe(
+      "04_105_0125_6_1"
+    );
+  });
+
+  it("shares an invoice by link, and revoking it closes every copy", async () => {
+    const participant = await createParticipant(agent, {
+      name: "Nina Blake",
+      preferred: "Nina",
+      ndis: "431990021",
+    });
+    const record = await approvedRecord(agent, {
+      ...ids,
+      clientId: participant.id,
+    });
+    const created = await agent
+      .post(`${API}/invoices`)
+      .send({ clientId: participant.id, recordIds: [record.id] });
+    const id = created.body.id;
+    expect(created.body.share).toMatchObject({ enabled: false, url: null });
+
+    // Nothing is readable until the link is turned on.
+    const shared = await agent
+      .post(`${API}/invoices/${id}/share`)
+      .send({ enabled: true });
+    expect(shared.status).toBe(200);
+    expect(shared.body.share.enabled).toBe(true);
+    const url: string = shared.body.share.url;
+    expect(url).toContain("/invoice/");
+    const token = url.split("/invoice/")[1]!;
+
+    // A signed-out visitor can read it and fetch the PDF.
+    const anonymous = request(app);
+    const publicView = await anonymous.get(`${API}/public/invoices/${token}`);
+    expect(publicView.status).toBe(200);
+    expect(publicView.body.id).toBe(id);
+    expect(publicView.body.total).toBe(created.body.total);
+    // Only what a payer needs: no internal ids, history or workspace data.
+    expect(publicView.body.recordIds).toBeUndefined();
+    expect(publicView.body.history).toBeUndefined();
+    expect(publicView.body.clientId).toBeUndefined();
+
+    const pdf = await anonymous.get(`${API}/public/invoices/${token}/pdf`);
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers["content-type"]).toContain("application/pdf");
+    expect(pdf.body.length).toBeGreaterThan(800);
+
+    // An unknown token must not be distinguishable from a revoked one.
+    const guessed = await anonymous.get(
+      `${API}/public/invoices/${"a".repeat(32)}`
+    );
+    expect(guessed.status).toBe(404);
+
+    const revoked = await agent
+      .post(`${API}/invoices/${id}/share`)
+      .send({ enabled: false });
+    expect(revoked.body.share).toMatchObject({ enabled: false, url: null });
+    const afterRevoke = await anonymous.get(`${API}/public/invoices/${token}`);
+    expect(afterRevoke.status).toBe(404);
+    const pdfAfterRevoke = await anonymous.get(
+      `${API}/public/invoices/${token}/pdf`
+    );
+    expect(pdfAfterRevoke.status).toBe(404);
   });
 });
 

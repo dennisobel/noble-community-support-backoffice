@@ -16,6 +16,10 @@ export const INVOICE_STATUSES = [
 ] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+/** Where an invoice stands in Xero: never sent there, waiting to sync, in step, or needing a person. */
+export const XERO_SYNC_STATES = ["none", "queued", "synced", "error"] as const;
+export type XeroSyncState = (typeof XERO_SYNC_STATES)[number];
+
 export const SHIFT_RATIOS = ["1:1", "1:M", "M:M"] as const;
 export type ShiftRatio = (typeof SHIFT_RATIOS)[number];
 

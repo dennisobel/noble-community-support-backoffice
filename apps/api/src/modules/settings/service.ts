@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { PreferencesDTO, WorkspaceDTO } from "@shared/dto";
+import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import { fromCents, toCents } from "@shared/logic/money";
 import type {
   preferencesPatchSchema,
@@ -39,7 +40,15 @@ export function toWorkspaceDTO(ws: WorkspaceDoc): WorkspaceDTO {
       footer: ws.invoice?.footer ?? "",
       paymentInstructions: ws.invoice?.paymentInstructions ?? "",
     },
-    providerTravelRate: fromCents(ws.providerTravelRateCents ?? 100),
+    bank: {
+      accountName: ws.bank?.accountName ?? "",
+      bsb: ws.bank?.bsb ?? "",
+      accountNumber: ws.bank?.accountNumber ?? "",
+      payInstruction: ws.bank?.payInstruction ?? "",
+    },
+    providerTravelRate: fromCents(
+      ws.providerTravelRateCents ?? DEFAULT_TRAVEL_RATE_CENTS
+    ),
     budgetCategories: ws.budgetCategories ?? [],
     setupCompletedAt: ws.setupCompletedAt
       ? ws.setupCompletedAt.toISOString()
@@ -96,6 +105,9 @@ export async function updateWorkspaceSettings(
   if (input.invoice)
     for (const [key, value] of Object.entries(input.invoice))
       if (value !== undefined) $set[`invoice.${key}`] = value;
+  if (input.bank)
+    for (const [key, value] of Object.entries(input.bank))
+      if (value !== undefined) $set[`bank.${key}`] = value;
   if (input.providerTravelRate !== undefined)
     $set.providerTravelRateCents = toCents(input.providerTravelRate);
   if (input.budgetCategories) {
