@@ -36,8 +36,51 @@ export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
 /* ───────────── Accounts & portal access ───────────── */
 
-export const USER_ROLES = ["admin", "staff"] as const;
+/** `admin` and the office roles use the back office; `staff` is the support worker portal. */
+export const USER_ROLES = [
+  "admin",
+  "manager",
+  "coordinator",
+  "finance",
+  "staff",
+] as const;
 export type UserRole = (typeof USER_ROLES)[number];
+
+/** Roles an Admin can give someone who asked for access. Support workers join through the staff portal flow. */
+export const OFFICE_ROLES = [
+  "admin",
+  "manager",
+  "coordinator",
+  "finance",
+] as const;
+export type OfficeRole = (typeof OFFICE_ROLES)[number];
+
+/** `pending` and `rejected` accounts cannot sign in. */
+export const USER_STATUSES = [
+  "pending",
+  "active",
+  "disabled",
+  "rejected",
+] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+
+/** The parts of the back office an Admin switches on per person: one per sidebar entry except Settings. */
+export const ACCESS_MODULES = [
+  "dashboard",
+  "roster",
+  "live",
+  "clients",
+  "files",
+  "services",
+  "invoices",
+  "staff",
+  "payroll",
+  "reports",
+  "worker-reports",
+  "feedback",
+  "voice",
+] as const;
+export type AccessModule = (typeof ACCESS_MODULES)[number];
 
 /** Where a staff member is in the sign-up → approval → sign-in journey. */
 export const STAFF_ACCOUNT_STATUSES = [
@@ -574,3 +617,229 @@ export const ERROR_CODES = [
   "INTERNAL",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
+
+/* ───────────── E-signatures ───────────── */
+
+/** Where a signature request stands. "Expired" is worked out from the expiry date, never stored. */
+export const SIGNATURE_STATUSES = [
+  "draft",
+  "sent",
+  "completed",
+  "declined",
+  "cancelled",
+] as const;
+export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
+export type SignatureDisplayStatus = SignatureStatus | "expired";
+
+export const SIGNER_STATUSES = [
+  "pending",
+  "viewed",
+  "signed",
+  "declined",
+] as const;
+export type SignerStatus = (typeof SIGNER_STATUSES)[number];
+
+/** What a box on the page asks of the person signing. */
+export const SIGNATURE_FIELD_TYPES = [
+  "signature",
+  "date",
+  "text",
+  "checkbox",
+] as const;
+export type SignatureFieldType = (typeof SIGNATURE_FIELD_TYPES)[number];
+
+export const SIGNATURE_EVENT_TYPES = [
+  "created",
+  "sent",
+  "viewed",
+  "signed",
+  "declined",
+  "completed",
+  "cancelled",
+  "reminded",
+  "link_reset",
+  "extended",
+] as const;
+export type SignatureEventType = (typeof SIGNATURE_EVENT_TYPES)[number];
+
+/** What someone opening a signing link is told. */
+export type SigningState =
+  | "open"
+  | "signed"
+  | "completed"
+  | "declined"
+  | "cancelled"
+  | "expired";
+
+/* ───────────── Workforce: employment, availability & leave ───────────── */
+
+export const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Casual"] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+/** How a worker has said they can be rostered on one day of the week. */
+export const AVAILABILITY_MODES = [
+  "Any time",
+  "Set hours",
+  "Not available",
+] as const;
+export type AvailabilityMode = (typeof AVAILABILITY_MODES)[number];
+
+/** Monday first, the way the roster shows a week. */
+export const WEEKDAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
+
+export const LEAVE_TYPES = [
+  "Annual leave",
+  "Personal or carer's leave",
+  "Compassionate leave",
+  "Unpaid leave",
+  "Unavailable",
+  "Other",
+] as const;
+export type LeaveType = (typeof LEAVE_TYPES)[number];
+
+/** Leave that carries paid hours into a pay run (for full-time and part-time staff). */
+export const PAID_LEAVE_TYPES: readonly LeaveType[] = [
+  "Annual leave",
+  "Personal or carer's leave",
+  "Compassionate leave",
+];
+
+export const LEAVE_STATUSES = [
+  "Pending",
+  "Approved",
+  "Declined",
+  "Cancelled",
+] as const;
+export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
+
+/* ───────────── Timesheets & pay ───────────── */
+
+/** How a rostered service turns into pay: by the hour, or as a sleepover allowance. */
+export const SERVICE_PAY_TYPES = ["Hours worked", "Sleepover"] as const;
+export type ServicePayType = (typeof SERVICE_PAY_TYPES)[number];
+
+export const TIMESHEET_STATUSES = [
+  "Upcoming",
+  "In progress",
+  "No sign-on",
+  "Awaiting approval",
+  "Approved",
+  "In pay run",
+  "Cancelled",
+] as const;
+export type TimesheetStatus = (typeof TIMESHEET_STATUSES)[number];
+
+export const PAY_PERIOD_LENGTHS = ["Weekly", "Fortnightly"] as const;
+export type PayPeriodLength = (typeof PAY_PERIOD_LENGTHS)[number];
+
+export const PAY_RUN_STATUSES = ["Draft", "Finalised"] as const;
+export type PayRunStatus = (typeof PAY_RUN_STATUSES)[number];
+
+/** Every kind of line a pay run can carry. */
+export const PAY_CODES = [
+  "ORD",
+  "AFT",
+  "NGT",
+  "SAT",
+  "SUN",
+  "PH",
+  "OT1",
+  "OT2",
+  "OTS",
+  "OTP",
+  "SPAN",
+  "MIN",
+  "BRK",
+  "SLP",
+  "KM",
+  "LEAVE",
+  "LOAD",
+  "ADJ",
+] as const;
+export type PayCode = (typeof PAY_CODES)[number];
+
+/* ───────────── Complaints & feedback ───────────── */
+
+export const FEEDBACK_KINDS = ["Complaint", "Compliment", "Suggestion"] as const;
+export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
+
+export const FEEDBACK_STATUSES = [
+  "New",
+  "Acknowledged",
+  "Investigating",
+  "Resolved",
+  "Closed",
+] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+export const FEEDBACK_CHANNELS = [
+  "Phone",
+  "Email",
+  "In person",
+  "Online form",
+  "Letter",
+  "Other",
+] as const;
+export type FeedbackChannel = (typeof FEEDBACK_CHANNELS)[number];
+
+export const FEEDBACK_RELATIONSHIPS = [
+  "Participant",
+  "Family or carer",
+  "Advocate",
+  "Support worker",
+  "Member of the public",
+  "Other",
+] as const;
+export type FeedbackRelationship = (typeof FEEDBACK_RELATIONSHIPS)[number];
+
+export const FEEDBACK_AREAS = [
+  "Service delivery",
+  "Staff conduct",
+  "Communication",
+  "Billing",
+  "Safety",
+  "Privacy",
+  "Other",
+] as const;
+export type FeedbackArea = (typeof FEEDBACK_AREAS)[number];
+
+export const FEEDBACK_PRIORITIES = ["Low", "Medium", "High"] as const;
+export type FeedbackPriority = (typeof FEEDBACK_PRIORITIES)[number];
+
+export const FEEDBACK_SATISFACTION = ["Not asked", "Yes", "Partly", "No"] as const;
+export type FeedbackSatisfaction = (typeof FEEDBACK_SATISFACTION)[number];
+
+/**
+ * Incidents a registered NDIS provider must tell the NDIS Commission about. The last one has five
+ * business days; the rest have 24 hours from when key personnel became aware.
+ */
+export const REPORTABLE_INCIDENT_TYPES = [
+  "Death of a participant",
+  "Serious injury of a participant",
+  "Abuse or neglect of a participant",
+  "Unlawful sexual or physical contact with, or assault of, a participant",
+  "Sexual misconduct committed against, or in the presence of, a participant",
+  "Unauthorised use of a restrictive practice",
+] as const;
+export type ReportableIncidentType = (typeof REPORTABLE_INCIDENT_TYPES)[number];
+
+/* ───────────── Messages ───────────── */
+
+export const CONVERSATION_KINDS = ["direct", "group", "announcement"] as const;
+export type ConversationKind = (typeof CONVERSATION_KINDS)[number];
+
+/** Who an announcement goes to. */
+export const ANNOUNCEMENT_AUDIENCES = ["everyone", "workers", "office"] as const;
+export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
+
+/** What a conversation can be about, so the thread opens beside the shift or client it concerns. */
+export const MESSAGE_CONTEXT_TYPES = ["shift", "participant"] as const;
+export type MessageContextType = (typeof MESSAGE_CONTEXT_TYPES)[number];

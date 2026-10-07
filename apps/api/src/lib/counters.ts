@@ -40,4 +40,8 @@ export const nextIds = {
   invoice: async (prefix: string, year: string, session?: ClientSession) =>
     `${prefix}-${year}-${String(await nextSeq(`invoice:${year}`, session)).padStart(3, "0")}`,
   clientNumber: (session?: ClientSession) => nextSeq("participant", session),
+  payRun: async (session?: ClientSession) =>
+    `PR-${String(await nextSeq("payRun", session)).padStart(4, "0")}`,
+  feedback: async (session?: ClientSession) =>
+    `FB-${String(await nextSeq("feedback", session)).padStart(4, "0")}`,
 };

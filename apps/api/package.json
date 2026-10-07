@@ -13,8 +13,9 @@
     "cli": "tsx --env-file-if-exists=../../.env scripts/cli.ts"
   },
   "dependencies": {
-    "@noble/shared": "workspace:*",
     "@anthropic-ai/sdk": "^0.129.0",
+    "@cantoo/pdf-lib": "^2.11.1",
+    "@noble/shared": "workspace:*",
     "argon2": "^0.45.1",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",

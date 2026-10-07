@@ -35,6 +35,7 @@ import {
 } from "../../models";
 import { projectShiftImpact } from "../budgets/service";
 import { participantLookup } from "../participants/service";
+import { workforceWarnings } from "../payroll/roster-warnings";
 import { createRecord, staffLookup } from "../records/service";
 
 export async function shiftsToDTOs(
@@ -227,16 +228,20 @@ async function checkShift(
   const warnings =
     problems.length || options.skipWarnings || !service
       ? []
-      : await projectShiftImpact(
-          participants,
-          {
-            date: draft.date,
-            start: draft.start,
-            end: draft.end,
-            serviceId: draft.serviceId,
-          },
-          excludeId
-        );
+      : [
+          ...(await projectShiftImpact(
+            participants,
+            {
+              date: draft.date,
+              start: draft.start,
+              end: draft.end,
+              serviceId: draft.serviceId,
+            },
+            excludeId
+          )),
+          // Time off, availability and what the award makes of the shift for each worker on it.
+          ...(await workforceWarnings(draft, staff, excludeId)),
+        ];
   return { problems, warnings, service };
 }
 

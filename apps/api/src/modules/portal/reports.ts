@@ -5,12 +5,15 @@ import { MESSAGES } from "@shared/messages";
 import { logActivity } from "../../lib/audit";
 import { errors } from "../../lib/errors";
 import type { RequestContext } from "../../lib/http";
+import { workspaceTimezone } from "../../lib/workspace";
 import {
   Participant,
   Staff,
   type ParticipantDoc,
   type StaffDoc,
 } from "../../models";
+import { publicHolidaySet } from "../payroll/settings";
+import { toReportableDTO } from "./reportable";
 
 /** Reports are locked once an Admin has reviewed them. */
 function assertEditable(status: string): void {
@@ -21,6 +24,9 @@ function assertEditable(status: string): void {
 export type ReportLookups = {
   staff: Map<string, StaffDoc>;
   participants: Map<string, ParticipantDoc>;
+  /** What the NDIS Commission deadlines are counted in. */
+  timezone: string;
+  holidays: ReadonlySet<string>;
 };
 
 export async function reportLookups(rows: {
@@ -35,19 +41,23 @@ export async function reportLookups(rows: {
         .map(String)
     ),
   ];
-  const [staff, participants] = await Promise.all([
+  const [staff, participants, timezone, holidays] = await Promise.all([
     Staff.find({ _id: { $in: staffIds } }).lean<StaffDoc[]>(),
     participantIds.length
       ? Participant.find({ _id: { $in: participantIds } }).lean<
           ParticipantDoc[]
         >()
       : Promise.resolve([]),
+    workspaceTimezone(),
+    publicHolidaySet(),
   ]);
   return {
     staff: new Map(staff.map(member => [String(member._id), member])),
     participants: new Map(
       participants.map(participant => [String(participant._id), participant])
     ),
+    timezone,
+    holidays,
   };
 }
 
@@ -74,6 +84,7 @@ import type {
   IncidentReportDTO,
   LogbookEntryDTO,
 } from "@shared/dto";
+import type { incidentReportableSchema } from "@shared/schemas/feedback";
 import type {
   abcCreateSchema,
   abcUpdateSchema,
@@ -127,6 +138,7 @@ export function toIncidentDTO(
     reviewNote: report.reviewNote ?? "",
     reviewedBy: actorDTO(report.reviewedBy),
     reviewedAt: report.reviewedAt ? report.reviewedAt.toISOString() : null,
+    reportable: toReportableDTO(report.reportable, lookups),
     created: isoRequired(report.createdAt),
     updated: isoRequired(report.updatedAt),
     rev: report.rev ?? 0,
@@ -330,6 +342,104 @@ export async function getIncidentAdmin(id: string) {
     participantIds: [report.participantId],
   });
   return toIncidentDTO(report, lookups);
+}
+
+/**
+ * Marks an incident as reportable to the NDIS Commission and records what has been lodged.
+ * The two deadlines are worked out from when key personnel became aware, never typed in.
+ */
+export async function setIncidentReportable(
+  id: string,
+  input: z.output<typeof incidentReportableSchema>,
+  ctx: RequestContext
+) {
+  const current = await IncidentReport.findById(id).lean<IncidentReportDoc>();
+  if (!current) throw errors.notFound("Incident report");
+  assertRev(current, input.rev);
+  const before = current.reportable;
+  const kind = input.type ?? before?.kind ?? null;
+  if (input.flagged && !kind)
+    throw errors.validation(
+      "Choose which kind of reportable incident this is.",
+      [{ path: "type", message: "Choose the kind of incident." }]
+    );
+  const awareAt = input.awareAt
+    ? new Date(input.awareAt)
+    : (before?.awareAt ?? current.createdAt);
+  if (awareAt.getTime() > Date.now() + 60_000)
+    throw errors.validation("The time you became aware cannot be in the future.", [
+      { path: "awareAt", message: "Choose a time that has passed." },
+    ]);
+  const lodged = (
+    asked: boolean | undefined,
+    already: Date | null | undefined
+  ) => (asked === undefined ? (already ?? null) : asked ? (already ?? new Date()) : null);
+  const updated = await IncidentReport.findOneAndUpdate(
+    { _id: id, rev: current.rev },
+    {
+      $set: {
+        reportable: {
+          flagged: input.flagged,
+          kind,
+          awareAt: input.flagged ? awareAt : (before?.awareAt ?? null),
+          harm: input.harm ?? before?.harm ?? false,
+          notifiedAt: lodged(input.notified, before?.notifiedAt),
+          notifiedReference:
+            input.notifiedReference ?? before?.notifiedReference ?? "",
+          fiveDayAt: lodged(input.fiveDaySubmitted, before?.fiveDayAt),
+          note: input.note ?? before?.note ?? "",
+          flaggedBy: before?.flaggedBy ?? ctx.actor,
+        },
+      },
+      $inc: { rev: 1 },
+    },
+    { returnDocument: "after", lean: true }
+  );
+  if (!updated) throw errors.stale();
+  await logActivity({
+    actor: ctx.actor,
+    action: "incident.reportable_updated",
+    entityType: "incident",
+    entityId: id,
+    summary: !input.flagged
+      ? "marked an incident as not reportable"
+      : input.fiveDaySubmitted && !before?.fiveDayAt
+        ? "recorded the five-day report to the NDIS Commission"
+        : input.notified && !before?.notifiedAt
+          ? "recorded the notification to the NDIS Commission"
+          : "marked an incident as reportable to the NDIS Commission",
+    ip: ctx.ip,
+  });
+  return getIncidentAdmin(id);
+}
+
+/** Reportable incidents with something still to lodge, soonest deadline first. */
+export async function outstandingReportable(): Promise<
+  Array<{ id: string; category: string; label: string; due: string; overdue: boolean }>
+> {
+  const rows = await IncidentReport.find({ "reportable.flagged": true })
+    .sort({ "reportable.awareAt": 1 })
+    .limit(50)
+    .lean<IncidentReportDoc[]>();
+  if (!rows.length) return [];
+  const [timezone, holidays] = await Promise.all([
+    workspaceTimezone(),
+    publicHolidaySet(),
+  ]);
+  return rows
+    .map(row => ({
+      row,
+      next: toReportableDTO(row.reportable, { timezone, holidays }).next,
+    }))
+    .filter(item => item.next)
+    .map(({ row, next }) => ({
+      id: String(row._id),
+      category: row.category,
+      label: next!.label,
+      due: next!.due,
+      overdue: next!.overdue,
+    }))
+    .sort((a, b) => a.due.localeCompare(b.due));
 }
 
 /* ───────────── ABC reports ───────────── */

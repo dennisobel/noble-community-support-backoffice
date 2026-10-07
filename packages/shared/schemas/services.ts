@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SERVICE_UNITS, TRANSPORT_UNITS } from "../enums";
+import { SERVICE_PAY_TYPES, SERVICE_UNITS, TRANSPORT_UNITS } from "../enums";
 import { MESSAGES } from "../messages";
 import { money, requiredText, rev, text } from "./common";
 
@@ -12,6 +12,8 @@ const serviceShape = {
   active: z.boolean(),
   budgetCategory: requiredText(80, MESSAGES.serviceCategory),
   supportItemNumber: text(40).optional(),
+  /** How a shift of this service is paid to the worker: by the hour, or as a sleepover allowance. */
+  payAs: z.enum(SERVICE_PAY_TYPES).optional(),
 };
 
 export const serviceCreateSchema = z.object(serviceShape);

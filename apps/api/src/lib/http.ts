@@ -1,7 +1,7 @@
 import type { Request } from "express";
 import type { z } from "zod";
 import type { ActorRef } from "@shared/dto";
-import type { UserRole } from "@shared/enums";
+import type { AccessModule, UserRole } from "@shared/enums";
 import { AppError, errors } from "./errors";
 
 export interface AuthContext {
@@ -10,6 +10,8 @@ export interface AuthContext {
     name: string;
     email: string;
     role: UserRole;
+    /** What the user can open in the back office: every module for Admins, none for support workers. */
+    modules: AccessModule[];
     /** The team member this account belongs to (staff accounts only). */
     staffId: string | null;
   };

@@ -1,10 +1,12 @@
 import {
   AlertTriangle,
   CalendarDays,
+  CalendarOff,
   ChevronRight,
   ClipboardList,
   Car,
   Info,
+  MessagesSquare,
   NotebookPen,
   ShieldAlert,
 } from "lucide-react";
@@ -33,6 +35,12 @@ const QUICK = [
   },
   { href: "/staff/reports/abc", label: "Record an ABC", icon: ClipboardList },
   { href: "/staff/reports/logbook", label: "Add kilometres", icon: Car },
+  {
+    href: "/staff/schedule/time-off",
+    label: "Ask for time off",
+    icon: CalendarOff,
+  },
+  { href: "/staff/messages", label: "Message the office", icon: MessagesSquare },
 ];
 
 /** The worker's landing screen: what is on today, what is overdue, and the quick actions. */

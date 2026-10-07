@@ -31,6 +31,8 @@ interface RowDraft {
   transport: boolean;
   active: boolean;
   budgetCategory: string;
+  /** Workers are paid a sleepover allowance for a shift of this service, not by the hour. */
+  sleepover: boolean;
 }
 
 function AddServiceDrawer({ onClose }: { onClose: () => void }) {
@@ -46,6 +48,7 @@ function AddServiceDrawer({ onClose }: { onClose: () => void }) {
     active: true,
     budgetCategory: "",
     supportItemNumber: "",
+    sleepover: false,
   });
   const [error, setError] = useState("");
   const category = draft.budgetCategory || categories[0] || "";
@@ -69,6 +72,7 @@ function AddServiceDrawer({ onClose }: { onClose: () => void }) {
         active: draft.active,
         budgetCategory: category,
         supportItemNumber: draft.supportItemNumber.trim() || undefined,
+        payAs: draft.sleepover ? "Sleepover" : "Hours worked",
       });
       notify(`${created.name} added to service rates.`);
       onClose();
@@ -216,6 +220,24 @@ function AddServiceDrawer({ onClose }: { onClose: () => void }) {
                 </small>
               </span>
             </label>
+            <label className="flex items-start gap-2 rounded-md bg-[#f5f8f7] p-3 text-xs text-[#586c74]">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-[#147f79]"
+                checked={draft.sleepover}
+                onChange={event =>
+                  setDraft(old => ({ ...old, sleepover: event.target.checked }))
+                }
+              />
+              <span>
+                <b className="block text-[#405761]">Sleepover shift</b>
+                <small className="mt-1 block text-[10px] text-[#839097]">
+                  Workers rostered on this service are paid the sleepover
+                  allowance for the night instead of an hourly rate. Billing is
+                  not affected.
+                </small>
+              </span>
+            </label>
             <label className="flex items-center justify-between border-t border-[#edf0ef] pt-4 text-xs text-[#52666f]">
               <span>
                 <b className="block text-[#405761]">Active service</b>
@@ -266,6 +288,7 @@ export default function ServicesPage() {
       transport: service.transport,
       active: service.active,
       budgetCategory: service.budgetCategory,
+      sleepover: service.payAs === "Sleepover",
     };
   const change = (service: ServiceDTO, patch: Partial<RowDraft>) =>
     setDrafts(current => ({
@@ -280,6 +303,7 @@ export default function ServicesPage() {
         Number(draft.rate) !== service.rate ||
         draft.transport !== service.transport ||
         draft.active !== service.active ||
+        draft.sleepover !== (service.payAs === "Sleepover") ||
         draft.budgetCategory !== service.budgetCategory)
     );
   };
@@ -297,6 +321,7 @@ export default function ServicesPage() {
         transport: draft.transport,
         active: draft.active,
         budgetCategory: draft.budgetCategory,
+        payAs: draft.sleepover ? "Sleepover" : "Hours worked",
       });
       setDrafts(current => {
         const next = { ...current };
@@ -364,7 +389,26 @@ export default function ServicesPage() {
                           aria-label={`${service.name} NDIS support item number`}
                         />
                       </td>
-                      <td>{service.unit}</td>
+                      <td>
+                        {service.unit}
+                        <label
+                          className="mt-1 flex items-center gap-1.5 text-[10px] font-normal text-[#7b8990]"
+                          title="Workers are paid the sleepover allowance for a shift of this service instead of an hourly rate."
+                        >
+                          <input
+                            type="checkbox"
+                            className="accent-[#147f79]"
+                            checked={draft.sleepover}
+                            onChange={event =>
+                              change(service, {
+                                sleepover: event.target.checked,
+                              })
+                            }
+                            aria-label={`${service.name} is a sleepover shift`}
+                          />
+                          Sleepover
+                        </label>
+                      </td>
                       <td>
                         <input
                           type="number"

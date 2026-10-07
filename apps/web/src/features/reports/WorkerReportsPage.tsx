@@ -1,6 +1,6 @@
-import { Car, ClipboardList, ShieldAlert } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "wouter";
+import { Car, ClipboardList, ShieldAlert, Siren } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useParams, useSearch } from "wouter";
 import type { AbcReportDTO, IncidentReportDTO } from "@shared/dto";
 import { errorMessage } from "@/api/client";
 import {
@@ -22,6 +22,7 @@ import {
 } from "@/components/app/ui";
 import { formatDateTime, prettyDate } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
+import ReportablePanel from "./ReportablePanel";
 
 type Tab = "incidents" | "abc" | "logbook";
 
@@ -169,6 +170,8 @@ function ReportDrawer({
         </dl>
       </Panel>
 
+      {incident && <ReportablePanel incident={incident} />}
+
       <Panel title="Review" className="mt-4">
         <div className="p-5">
           <label className="label">
@@ -205,6 +208,20 @@ export default function WorkerReportsPage() {
     report: IncidentReportDTO | AbcReportDTO;
     kind: "incidents" | "abc-reports";
   } | null>(null);
+  // A notification or a linked complaint can point straight at one incident.
+  const wanted = new URLSearchParams(useSearch()).get("open");
+  useEffect(() => {
+    const report = wanted && incidents.data?.find(row => row.id === wanted);
+    if (report) setOpen({ report, kind: "incidents" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, Boolean(incidents.data)]);
+  // The drawer shows the list's latest copy, so a change made inside it is seen at once.
+  const opened =
+    open &&
+    ((open.kind === "incidents" ? incidents.data : abc.data)?.find(
+      row => row.id === open.report.id
+    ) ??
+      open.report);
 
   const active =
     tab === "incidents" ? incidents : tab === "abc" ? abc : logbook;
@@ -346,7 +363,21 @@ export default function WorkerReportsPage() {
                         {report.time}
                       </div>
                     </div>
-                    <Status value={report.status} />
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <Status value={report.status} />
+                      {"reportable" in report && report.reportable.flagged && (
+                        <span
+                          className={`badge ${report.reportable.next ? "badge-danger" : "badge-approved"}`}
+                        >
+                          <Siren size={11} />
+                          {report.reportable.next
+                            ? report.reportable.next.overdue
+                              ? "Commission overdue"
+                              : "Commission due"
+                            : "Commission lodged"}
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <p className="mt-3 line-clamp-3 border-t border-[#edf0ef] pt-3 text-xs leading-5 text-[#52666f]">
                     {"description" in report
@@ -365,9 +396,10 @@ export default function WorkerReportsPage() {
         })()
       )}
 
-      {open && (
+      {open && opened && (
         <ReportDrawer
-          report={open.report}
+          key={opened.id}
+          report={opened}
           kind={open.kind}
           onClose={() => setOpen(null)}
         />

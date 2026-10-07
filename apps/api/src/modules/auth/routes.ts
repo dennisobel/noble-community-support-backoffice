@@ -7,6 +7,7 @@ import {
   signupSchema,
   updateMeSchema,
 } from "@shared/schemas/auth";
+import { registerSchema } from "@shared/schemas/access";
 import { staffApplicationSchema } from "@shared/schemas/staff-portal";
 import { param, parse } from "../../lib/http";
 import { authenticate } from "../../middleware/auth";
@@ -22,6 +23,7 @@ import {
   logoutAll,
   me,
   refresh,
+  register,
   resetPassword,
   revokeSession,
   signup,
@@ -50,6 +52,10 @@ export function authRouter(): Router {
   });
   router.post("/signup", setupLimit, async (req, res) => {
     res.status(201).json(await signup(parse(signupSchema, req.body), req, res));
+  });
+  /* Office staff ask for access here; an Admin approves them and chooses their role and modules. */
+  router.post("/register", setupLimit, async (req, res) => {
+    res.status(202).json(await register(parse(registerSchema, req.body), req));
   });
   router.post("/login", signInLimit, async (req, res) => {
     res.json(await login(parse(loginSchema, req.body), req, res));

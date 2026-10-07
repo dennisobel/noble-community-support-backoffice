@@ -7,23 +7,46 @@ import {
 } from "@tanstack/react-query";
 import type {
   AbcReportDTO,
+  AccessUserDTO,
   ActivityDTO,
   AuthSessionDTO,
+  AvailabilityDTO,
   BootstrapDTO,
   BudgetAdjustmentDTO,
   BudgetResponseDTO,
+  ConversationDTO,
+  ConversationListDTO,
   DashboardDTO,
   DocumentDTO,
+  FeedbackCaseDTO,
+  FeedbackFormDTO,
+  FeedbackListDTO,
+  FeedbackOptionsDTO,
   IncidentReportDTO,
   InvoiceDTO,
+  PublicFeedbackFormDTO,
+  PublicFeedbackResultDTO,
   PublicInvoiceDTO,
+  PublicSigningDTO,
+  PublicSigningResultDTO,
   InvoiceSummaryDTO,
+  LeaveRequestDTO,
   LiveTrackingDTO,
   LogbookEntryDTO,
+  MessageDTO,
+  MessageOptionsDTO,
   MetaDTO,
+  MyDayDTO,
+  NoteDTO,
+  NoteLabelDTO,
+  NoteSummaryDTO,
   NotificationsDTO,
   Paginated,
   ParticipantDTO,
+  PayClassificationOptionDTO,
+  PayRunDTO,
+  PayRunSummaryDTO,
+  PaySettingsDTO,
   PortalHomeDTO,
   PortalShiftDTO,
   PreferencesDTO,
@@ -35,12 +58,19 @@ import type {
   ServiceRecordDTO,
   SessionDTO,
   ShiftValidationDTO,
+  SignatureListDTO,
+  SignatureReminderResultDTO,
+  SignatureRequestDTO,
+  SignatureSendResultDTO,
   StaffApplicationDTO,
   StaffChecklistItemDTO,
   StaffComplianceDTO,
   StaffDTO,
   StaffDocumentDTO,
+  StaffPayDTO,
   StaffPortalProfileDTO,
+  TimesheetDetailDTO,
+  TimesheetListDTO,
   TrackingSessionDTO,
   TreeNode,
   VoiceNoteDTO,
@@ -50,13 +80,28 @@ import type {
   XeroOptionsDTO,
   XeroStatusDTO,
 } from "@shared/dto";
+import { MESSAGE_POLL_MS } from "@shared/const";
+import type { AccessModule, OfficeRole } from "@shared/enums";
 import type {
+  AvailabilityInput,
   BudgetAdjustInput,
   BudgetSetupInput,
+  ConversationCreateInput,
+  FeedbackActionInput,
+  FeedbackCreateInput,
+  FeedbackStatusInput,
+  FeedbackUpdateInput,
+  IncidentReportableInput,
+  PublicFeedbackInput,
   GenerateDraftInput,
   InvoiceCreateInput,
+  LeaveCreateInput,
+  LeaveDecisionInput,
+  OfficeLeaveCreateInput,
   ParticipantCreateInput,
   ParticipantUpdateInput,
+  PayAdjustmentInput,
+  PaySettingsInput,
   PreferencesPatchInput,
   RecordCreateInput,
   RecordUpdateInput,
@@ -64,8 +109,12 @@ import type {
   ServiceUpdateInput,
   ShiftCreateInput,
   ShiftUpdateInput,
+  SignatureDraftInput,
+  SignatureSendInput,
+  SignSubmitInput,
   StaffCreateInput,
   StaffUpdateInput,
+  TimesheetApproveInput,
   WorkspacePatchInput,
   XeroSettingsInput,
 } from "@shared/schemas";
@@ -86,6 +135,21 @@ const GROUPS = {
   settings: ["workspace", "preferences", "meta", "session"],
   sessions: ["auth-sessions"],
   xero: ["xero-status", "xero-options"],
+  access: ["access-users"],
+  notes: ["notes", "note-labels"],
+  signatures: ["signatures", "signature"],
+  leave: ["leave", "staff-availability"],
+  feedback: ["feedback", "feedback-case", "feedback-options"],
+  messages: ["conversations", "conversation", "messages-unread"],
+  payroll: [
+    "pay-settings",
+    "pay-classifications",
+    "staff-pay",
+    "timesheets",
+    "timesheet",
+    "pay-runs",
+    "pay-run",
+  ],
   derived: ["dashboard", "notifications", "reports", "activity", "search"],
 } as const;
 type Group = keyof typeof GROUPS;
@@ -194,7 +258,7 @@ export const useUpdateStaff = () =>
   useApiMutation(
     ({ id, ...input }: StaffUpdateInput & { id: string }) =>
       api.patch<WithWarnings<StaffDTO>>(`/staff/${id}`, input),
-    ["staff", "shifts"]
+    ["staff", "shifts", "payroll"]
   );
 
 export const useServices = (
@@ -1235,3 +1299,686 @@ export const useXeroSyncInvoice = () =>
       ),
     ["invoices"]
   );
+
+/* ───────────── Users & access ───────────── */
+
+/** Everyone with a back-office account, requests first. Admin only. */
+export const useAccessUsers = () =>
+  useQuery({
+    queryKey: ["access-users"],
+    queryFn: () => api.get<AccessUserDTO[]>("/users"),
+  });
+export const useApproveUser = () =>
+  useApiMutation(
+    ({
+      id,
+      ...body
+    }: {
+      id: string;
+      role: OfficeRole;
+      modules: AccessModule[];
+    }) => api.post<AccessUserDTO>(`/users/${id}/approve`, body),
+    ["access"]
+  );
+export const useDeclineUser = () =>
+  useApiMutation(
+    ({ id, note }: { id: string; note?: string }) =>
+      api.post<AccessUserDTO>(`/users/${id}/decline`, { note }),
+    ["access"]
+  );
+export const useUpdateUserAccess = () =>
+  useApiMutation(
+    ({
+      id,
+      ...body
+    }: {
+      id: string;
+      role?: OfficeRole;
+      modules?: AccessModule[];
+      status?: "active" | "disabled";
+    }) => api.patch<AccessUserDTO>(`/users/${id}`, body),
+    ["access"]
+  );
+
+/* ───────────── Notes & my day ───────────── */
+
+export const useNotes = (params: {
+  q?: string;
+  label?: string;
+  archived?: boolean;
+}) =>
+  useQuery({
+    queryKey: ["notes", params],
+    queryFn: () =>
+      api.get<NoteSummaryDTO[]>(
+        "/notes",
+        clean({
+          q: params.q,
+          label: params.label,
+          archived: params.archived ? "true" : undefined,
+        })
+      ),
+    placeholderData: keepPreviousData,
+  });
+export const useNoteLabels = () =>
+  useQuery({
+    queryKey: ["note-labels"],
+    queryFn: () => api.get<NoteLabelDTO[]>("/notes/labels"),
+  });
+/** One note for the editor. The editor owns the text while it is open, so it is not refetched under it. */
+export const useNote = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["note", id],
+    queryFn: () => api.get<NoteDTO>(`/notes/${id}`),
+    enabled: Boolean(id),
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+export const useCreateNote = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<NoteDTO>("/notes", {}),
+    onSuccess: note => qc.setQueryData(["note", note.id], note),
+  });
+};
+export interface NotePatch {
+  id: string;
+  title?: string;
+  content?: Record<string, unknown>;
+  labels?: string[];
+  pinned?: boolean;
+  archived?: boolean;
+  rev?: number;
+}
+/**
+ * Autosave and the pin / archive buttons. Plain edits patch the cached list in place (no refetch per
+ * keystroke); anything that changes which list a note belongs to refetches the lists and labels.
+ */
+export const useUpdateNote = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: NotePatch) =>
+      api.patch<NoteDTO>(`/notes/${id}`, body),
+    onSuccess: (saved, vars) => {
+      qc.setQueryData(["note", saved.id], saved);
+      const lists = qc.getQueriesData<NoteSummaryDTO[]>({ queryKey: ["notes"] });
+      const unseen = lists.some(
+        ([key, data]) =>
+          !(key[1] as { q?: string; label?: string; archived?: boolean }).q &&
+          !(key[1] as { label?: string }).label &&
+          !(key[1] as { archived?: boolean }).archived &&
+          data &&
+          !data.some(note => note.id === saved.id)
+      );
+      const moved =
+        vars.pinned !== undefined ||
+        vars.archived !== undefined ||
+        vars.labels !== undefined;
+      if (moved || unseen) {
+        void qc.invalidateQueries({ queryKey: ["notes"] });
+        void qc.invalidateQueries({ queryKey: ["note-labels"] });
+        return;
+      }
+      qc.setQueriesData<NoteSummaryDTO[]>({ queryKey: ["notes"] }, old =>
+        old?.map(note =>
+          note.id === saved.id
+            ? {
+                ...note,
+                title: saved.title,
+                snippet: saved.snippet,
+                imageCount: saved.imageCount,
+                updatedAt: saved.updatedAt,
+              }
+            : note
+        )
+      );
+    },
+  });
+};
+export const useDeleteNote = () =>
+  useApiMutation((id: string) => api.delete(`/notes/${id}`), ["notes"]);
+
+/** The signed-in person's own roster for a day (YYYY-MM-DD). */
+export const useMyDay = (date: string | undefined) =>
+  useQuery({
+    queryKey: ["my-day", date],
+    queryFn: () => api.get<MyDayDTO>("/me/day", clean({ date })),
+    enabled: Boolean(date),
+  });
+
+/* ───────────── E-signatures ───────────── */
+
+export const useSignatures = (params: { status?: string; q?: string } = {}) =>
+  useQuery({
+    queryKey: ["signatures", params],
+    queryFn: () => api.get<SignatureListDTO>("/signatures", clean(params)),
+    placeholderData: keepPreviousData,
+  });
+export const useSignature = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["signature", id],
+    queryFn: () => api.get<SignatureRequestDTO>(`/signatures/${id}`),
+    enabled: Boolean(id),
+    // While it is out for signature, look again now and then so progress shows up by itself.
+    refetchInterval: query =>
+      query.state.data?.status === "sent" ? 15_000 : false,
+  });
+export const useCreateSignature = () =>
+  useApiMutation(
+    ({
+      form,
+      onProgress,
+    }: {
+      form: FormData;
+      onProgress?: (percent: number) => void;
+    }) => api.upload<SignatureRequestDTO>("/signatures", form, onProgress),
+    ["signatures"]
+  );
+export const useSaveSignatureDraft = () =>
+  useApiMutation(
+    ({ id, ...input }: { id: string } & SignatureDraftInput) =>
+      api.patch<SignatureRequestDTO>(`/signatures/${id}`, input),
+    ["signatures"]
+  );
+export const useSendSignature = () =>
+  useApiMutation(
+    ({ id, ...input }: { id: string } & SignatureSendInput) =>
+      api.post<SignatureSendResultDTO>(`/signatures/${id}/send`, input),
+    ["signatures"]
+  );
+export const useRemindSigner = () =>
+  useApiMutation(
+    ({ id, signerId }: { id: string; signerId: string }) =>
+      api.post<SignatureReminderResultDTO>(
+        `/signatures/${id}/signers/${signerId}/remind`
+      ),
+    ["signatures"]
+  );
+export const useResetSignerLink = () =>
+  useApiMutation(
+    ({ id, signerId }: { id: string; signerId: string }) =>
+      api.post<SignatureRequestDTO>(
+        `/signatures/${id}/signers/${signerId}/new-link`
+      ),
+    ["signatures"]
+  );
+export const useExtendSignature = () =>
+  useApiMutation(
+    ({ id, days }: { id: string; days: number }) =>
+      api.post<SignatureRequestDTO>(`/signatures/${id}/extend`, { days }),
+    ["signatures"]
+  );
+export const useCancelSignature = () =>
+  useApiMutation(
+    ({ id, reason }: { id: string; reason?: string }) =>
+      api.post<SignatureRequestDTO>(`/signatures/${id}/cancel`, { reason }),
+    ["signatures"]
+  );
+export const useSealSignature = () =>
+  useApiMutation(
+    ({ id }: { id: string }) =>
+      api.post<SignatureRequestDTO>(`/signatures/${id}/seal`),
+    ["signatures", "documents"]
+  );
+export const useDeleteSignature = () =>
+  useApiMutation(
+    ({ id }: { id: string }) => api.delete(`/signatures/${id}`),
+    ["signatures"]
+  );
+
+/** The document behind a signing link. No session: the token in the URL is the credential. */
+export const usePublicSigning = (token: string | undefined) =>
+  useQuery({
+    queryKey: ["public-signing", token],
+    queryFn: () => api.get<PublicSigningDTO>(`/public/sign/${token}`),
+    enabled: Boolean(token),
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+export const useSubmitSigning = (token: string | undefined) =>
+  useMutation({
+    mutationFn: (input: SignSubmitInput) =>
+      api.post<PublicSigningResultDTO>(`/public/sign/${token}/submit`, input),
+  });
+export const useDeclineSigning = (token: string | undefined) =>
+  useMutation({
+    mutationFn: (input: { reason?: string }) =>
+      api.post<PublicSigningResultDTO>(`/public/sign/${token}/decline`, input),
+  });
+
+/* ───────────── Availability & leave ───────────── */
+
+export const useStaffAvailability = (staffId: string | undefined) =>
+  useQuery({
+    queryKey: ["staff-availability", staffId],
+    queryFn: () => api.get<AvailabilityDTO>(`/staff/${staffId}/availability`),
+    enabled: Boolean(staffId),
+  });
+export const useSetStaffAvailability = () =>
+  useApiMutation(
+    ({ staffId, ...input }: AvailabilityInput & { staffId: string }) =>
+      api.put<AvailabilityDTO>(`/staff/${staffId}/availability`, input),
+    ["leave", "shifts"]
+  );
+/** Time-off requests across the team, the ones waiting for a decision first. */
+export const useLeave = (params: { status?: string; staffId?: string } = {}) =>
+  useQuery({
+    queryKey: ["leave", params],
+    queryFn: () => api.get<LeaveRequestDTO[]>("/staff/leave", clean(params)),
+    placeholderData: keepPreviousData,
+  });
+export const useRecordLeave = () =>
+  useApiMutation(
+    (input: OfficeLeaveCreateInput) =>
+      api.post<LeaveRequestDTO>("/staff/leave", input),
+    ["leave", "shifts"]
+  );
+export const useDecideLeave = () =>
+  useApiMutation(
+    ({ id, ...input }: LeaveDecisionInput & { id: string }) =>
+      api.post<LeaveRequestDTO>(`/staff/leave/${id}/decision`, input),
+    ["leave", "shifts"]
+  );
+export const useCancelLeave = () =>
+  useApiMutation(
+    (id: string) => api.post<LeaveRequestDTO>(`/staff/leave/${id}/cancel`),
+    ["leave", "shifts"]
+  );
+
+/* The same things from the worker's side of the portal. */
+const usePortalMutation = <TVars, TResult>(
+  mutationFn: (vars: TVars) => Promise<TResult>,
+  keys: string[]
+) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSettled: () => {
+      for (const key of keys)
+        void qc.invalidateQueries({ queryKey: [key] });
+    },
+  });
+};
+export const usePortalAvailability = () =>
+  useQuery({
+    queryKey: ["portal-availability"],
+    queryFn: () => api.get<AvailabilityDTO>("/portal/availability"),
+  });
+export const useSetPortalAvailability = () =>
+  usePortalMutation(
+    (input: AvailabilityInput) =>
+      api.put<AvailabilityDTO>("/portal/availability", input),
+    ["portal-availability"]
+  );
+export const usePortalLeave = () =>
+  useQuery({
+    queryKey: ["portal-leave"],
+    queryFn: () => api.get<LeaveRequestDTO[]>("/portal/leave"),
+  });
+export const useRequestLeave = () =>
+  usePortalMutation(
+    (input: LeaveCreateInput) =>
+      api.post<LeaveRequestDTO>("/portal/leave", input),
+    ["portal-leave"]
+  );
+export const useWithdrawLeave = () =>
+  usePortalMutation(
+    (id: string) => api.post<LeaveRequestDTO>(`/portal/leave/${id}/cancel`),
+    ["portal-leave"]
+  );
+/** The worker's own hours for a pay period, and where each timesheet stands. */
+export const usePortalTimesheets = (date?: string) =>
+  useQuery({
+    queryKey: ["portal-timesheets", date ?? "current"],
+    queryFn: () =>
+      api.get<TimesheetListDTO>("/portal/timesheets", clean({ date })),
+    placeholderData: keepPreviousData,
+  });
+
+/* ───────────── Timesheets & pay ───────────── */
+
+export const usePaySettings = () =>
+  useQuery({
+    queryKey: ["pay-settings"],
+    queryFn: () => api.get<PaySettingsDTO>("/payroll/settings"),
+  });
+export const useUpdatePaySettings = () =>
+  useApiMutation(
+    (input: PaySettingsInput) =>
+      api.put<PaySettingsDTO>("/payroll/settings", input),
+    ["payroll", "staff", "shifts"]
+  );
+/** Classification names without rates: all the Staff page is allowed to know. */
+export const usePayClassifications = () =>
+  useQuery({
+    queryKey: ["pay-classifications"],
+    queryFn: () =>
+      api.get<PayClassificationOptionDTO[]>("/payroll/classifications"),
+    staleTime: 60_000,
+  });
+export const useStaffPay = () =>
+  useQuery({
+    queryKey: ["staff-pay"],
+    queryFn: () => api.get<StaffPayDTO[]>("/payroll/staff"),
+  });
+export const useSetPayRate = () =>
+  useApiMutation(
+    ({
+      staffId,
+      payRateOverride,
+    }: {
+      staffId: string;
+      payRateOverride: number | null;
+    }) =>
+      api.put<StaffPayDTO>(`/payroll/staff/${staffId}/rate`, {
+        payRateOverride,
+      }),
+    ["payroll"]
+  );
+
+export const useTimesheets = (params: {
+  date?: string;
+  staffId?: string;
+  cancelled?: boolean;
+}) =>
+  useQuery({
+    queryKey: ["timesheets", params],
+    queryFn: () =>
+      api.get<TimesheetListDTO>(
+        "/payroll/timesheets",
+        clean({
+          date: params.date,
+          staffId: params.staffId,
+          cancelled: params.cancelled ? "true" : undefined,
+        })
+      ),
+    placeholderData: keepPreviousData,
+  });
+export const useTimesheetDetail = (
+  key: { shiftId: string; staffId: string } | null
+) =>
+  useQuery({
+    queryKey: ["timesheet", key?.shiftId, key?.staffId],
+    queryFn: () =>
+      api.get<TimesheetDetailDTO>(
+        `/payroll/timesheets/${key!.shiftId}/${key!.staffId}`
+      ),
+    enabled: Boolean(key),
+  });
+export const useApproveTimesheet = () =>
+  useApiMutation(
+    ({
+      shiftId,
+      staffId,
+      ...input
+    }: TimesheetApproveInput & { shiftId: string; staffId: string }) =>
+      api.post<TimesheetDetailDTO>(
+        `/payroll/timesheets/${shiftId}/${staffId}/approve`,
+        input
+      ),
+    ["payroll", "shifts"]
+  );
+export const useUnapproveTimesheet = () =>
+  useApiMutation(
+    ({ shiftId, staffId }: { shiftId: string; staffId: string }) =>
+      api.post<TimesheetDetailDTO>(
+        `/payroll/timesheets/${shiftId}/${staffId}/unapprove`
+      ),
+    ["payroll"]
+  );
+/** Approves every signed-off timesheet in the period that matches the roster. */
+export const useApproveCleanTimesheets = () =>
+  useApiMutation(
+    (input: { date?: string; staffId?: string }) =>
+      api.post<{ approved: number; left: number }>(
+        "/payroll/timesheets/approve-clean",
+        clean(input)
+      ),
+    ["payroll", "shifts"]
+  );
+
+export const usePayRuns = () =>
+  useQuery({
+    queryKey: ["pay-runs"],
+    queryFn: () => api.get<PayRunSummaryDTO[]>("/payroll/pay-runs"),
+  });
+export const usePayRun = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["pay-run", id],
+    queryFn: () => api.get<PayRunDTO>(`/payroll/pay-runs/${id}`),
+    enabled: Boolean(id),
+  });
+export const useCreatePayRun = () =>
+  useApiMutation(
+    (input: { date?: string }) =>
+      api.post<PayRunDTO>("/payroll/pay-runs", clean(input)),
+    ["payroll"]
+  );
+export const usePayRunAction = () =>
+  useApiMutation(
+    ({
+      id,
+      action,
+      rev,
+    }: {
+      id: string;
+      action: "finalise" | "reopen";
+      rev?: number;
+    }) => api.post<PayRunDTO>(`/payroll/pay-runs/${id}/${action}`, { rev }),
+    ["payroll", "leave"]
+  );
+export const useDeletePayRun = () =>
+  useApiMutation(
+    (id: string) => api.delete(`/payroll/pay-runs/${id}`),
+    ["payroll"]
+  );
+export const useAddPayAdjustment = () =>
+  useApiMutation(
+    ({ id, ...input }: PayAdjustmentInput & { id: string }) =>
+      api.post<PayRunDTO>(`/payroll/pay-runs/${id}/adjustments`, input),
+    ["payroll"]
+  );
+export const useRemovePayAdjustment = () =>
+  useApiMutation(
+    ({ id, adjustmentId }: { id: string; adjustmentId: string }) =>
+      api.delete<PayRunDTO>(
+        `/payroll/pay-runs/${id}/adjustments/${adjustmentId}`
+      ),
+    ["payroll"]
+  );
+
+/* ───────────── Complaints & feedback ───────────── */
+
+export const useFeedback = (
+  params: { status?: string; kind?: string; q?: string } = {}
+) =>
+  useQuery({
+    queryKey: ["feedback", params],
+    queryFn: () => api.get<FeedbackListDTO>("/feedback", clean(params)),
+    placeholderData: keepPreviousData,
+  });
+export const useFeedbackCase = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["feedback-case", id],
+    queryFn: () => api.get<FeedbackCaseDTO>(`/feedback/${id}`),
+    enabled: Boolean(id),
+  });
+/** The people, clients and incidents a case can be linked to. */
+export const useFeedbackOptions = (enabled = true) =>
+  useQuery({
+    queryKey: ["feedback-options"],
+    queryFn: () => api.get<FeedbackOptionsDTO>("/feedback/options"),
+    enabled,
+    staleTime: 60_000,
+  });
+export const useCreateFeedback = () =>
+  useApiMutation(
+    (input: FeedbackCreateInput) =>
+      api.post<FeedbackCaseDTO>("/feedback", input),
+    ["feedback"]
+  );
+export const useUpdateFeedback = () =>
+  useApiMutation(
+    ({ id, ...input }: FeedbackUpdateInput & { id: string }) =>
+      api.patch<FeedbackCaseDTO>(`/feedback/${id}`, input),
+    ["feedback"]
+  );
+export const useFeedbackStatus = () =>
+  useApiMutation(
+    ({ id, ...input }: FeedbackStatusInput & { id: string }) =>
+      api.post<FeedbackCaseDTO>(`/feedback/${id}/status`, input),
+    ["feedback"]
+  );
+export const useFeedbackNote = () =>
+  useApiMutation(
+    ({ id, note }: { id: string; note: string }) =>
+      api.post<FeedbackCaseDTO>(`/feedback/${id}/notes`, { note }),
+    ["feedback"]
+  );
+export const useAddFeedbackAction = () =>
+  useApiMutation(
+    ({ id, ...input }: FeedbackActionInput & { id: string }) =>
+      api.post<FeedbackCaseDTO>(`/feedback/${id}/actions`, input),
+    ["feedback"]
+  );
+export const useUpdateFeedbackAction = () =>
+  useApiMutation(
+    ({
+      id,
+      actionId,
+      ...input
+    }: {
+      id: string;
+      actionId: string;
+      done?: boolean;
+    }) =>
+      api.patch<FeedbackCaseDTO>(
+        `/feedback/${id}/actions/${actionId}`,
+        input
+      ),
+    ["feedback"]
+  );
+export const useRemoveFeedbackAction = () =>
+  useApiMutation(
+    ({ id, actionId }: { id: string; actionId: string }) =>
+      api.delete<FeedbackCaseDTO>(`/feedback/${id}/actions/${actionId}`),
+    ["feedback"]
+  );
+/** Turns the public feedback form on or off, or issues a new link. */
+export const useFeedbackForm = () =>
+  useApiMutation(
+    (input: { enabled: boolean; regenerate?: boolean }) =>
+      api.put<FeedbackFormDTO>("/feedback/form", input),
+    ["feedback"]
+  );
+
+/** The public feedback form behind a link. No session. */
+export const usePublicFeedbackForm = (token: string | undefined) =>
+  useQuery({
+    queryKey: ["public-feedback", token],
+    queryFn: () =>
+      api.get<PublicFeedbackFormDTO>(`/public/feedback/${token}`),
+    enabled: Boolean(token),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+export const useSubmitPublicFeedback = (token: string | undefined) =>
+  useMutation({
+    mutationFn: (input: PublicFeedbackInput) =>
+      api.post<PublicFeedbackResultDTO>(`/public/feedback/${token}`, input),
+  });
+
+/** Marks an incident as reportable to the NDIS Commission and records what has been lodged. */
+export const useIncidentReportable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: IncidentReportableInput & { id: string }) =>
+      api.post<IncidentReportDTO>(`/incidents/${id}/reportable`, input),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-reports"] });
+      void qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+};
+
+/* ───────────── Messages ───────────── */
+
+/*
+ * Messages are polled: a short interval while a conversation is open, a longer one for the
+ * list and the unread badge. Nothing is refetched in a background tab.
+ */
+export const useConversations = (enabled = true) =>
+  useQuery({
+    queryKey: ["conversations"],
+    queryFn: () => api.get<ConversationListDTO>("/messages"),
+    enabled,
+    refetchInterval: MESSAGE_POLL_MS.list,
+  });
+/** How many conversations have something new, for the badge beside "Messages". */
+export const useUnreadMessages = () =>
+  useQuery({
+    queryKey: ["messages-unread"],
+    queryFn: () => api.get<{ unread: number }>("/messages/unread"),
+    refetchInterval: MESSAGE_POLL_MS.list,
+    staleTime: 10_000,
+  });
+export const useMessageOptions = (enabled = true) =>
+  useQuery({
+    queryKey: ["message-options"],
+    queryFn: () => api.get<MessageOptionsDTO>("/messages/options"),
+    enabled,
+    staleTime: 60_000,
+  });
+export const useConversation = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["conversation", id],
+    queryFn: () => api.get<ConversationDTO>(`/messages/${id}`),
+    enabled: Boolean(id),
+    refetchInterval: MESSAGE_POLL_MS.thread,
+    retry: false,
+  });
+const refreshMessages = (qc: QueryClient) => {
+  void qc.invalidateQueries({ queryKey: ["conversations"] });
+  void qc.invalidateQueries({ queryKey: ["messages-unread"] });
+  void qc.invalidateQueries({ queryKey: ["notifications"] });
+};
+export const useStartConversation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ConversationCreateInput) =>
+      api.post<ConversationDTO>("/messages", input),
+    onSuccess: conversation =>
+      qc.setQueryData(["conversation", conversation.id], conversation),
+    onSettled: () => refreshMessages(qc),
+  });
+};
+export const useSendMessage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: string }) =>
+      api.post<MessageDTO>(`/messages/${id}/messages`, { body }),
+    // Show it straight away; the next poll brings the settled thread.
+    onSuccess: message =>
+      qc.setQueryData<ConversationDTO>(
+        ["conversation", message.conversationId],
+        old =>
+          old && !old.messages.some(item => item.id === message.id)
+            ? { ...old, messages: [...old.messages, message] }
+            : old
+      ),
+    onSettled: (_data, _error, vars) => {
+      void qc.invalidateQueries({ queryKey: ["conversation", vars.id] });
+      refreshMessages(qc);
+    },
+  });
+};
+export const useMarkConversationRead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<void>(`/messages/${id}/read`),
+    onSettled: () => refreshMessages(qc),
+  });
+};

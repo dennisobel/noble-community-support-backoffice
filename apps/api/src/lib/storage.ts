@@ -44,7 +44,7 @@ export const storage = {
   },
 
   newKey(
-    kind: "documents" | "voice",
+    kind: "documents" | "voice" | "notes" | "signatures",
     extension: string,
     name: string = randomUUID()
   ): string {
@@ -64,6 +64,24 @@ export const storage = {
       await fs.copyFile(tempPath, destination);
       await fs.unlink(tempPath);
     }
+  },
+
+  /** Writes bytes the server produced itself (a sealed PDF, a signature picture). */
+  async write(key: string, data: Uint8Array): Promise<void> {
+    const destination = storage.resolve(key);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, data);
+  },
+
+  async read(key: string): Promise<Buffer> {
+    return fs.readFile(storage.resolve(key));
+  },
+
+  /** A second, independent copy, so deleting one never leaves the other pointing at nothing. */
+  async copy(fromKey: string, toKey: string): Promise<void> {
+    const destination = storage.resolve(toKey);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.copyFile(storage.resolve(fromKey), destination);
   },
 
   async remove(key: string | null | undefined): Promise<void> {

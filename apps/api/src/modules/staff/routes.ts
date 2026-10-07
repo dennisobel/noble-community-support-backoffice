@@ -9,9 +9,17 @@ import {
   checklistReviewSchema,
   staffInviteSchema,
 } from "@shared/schemas/staff-portal";
+import {
+  availabilitySchema,
+  leaveDecisionSchema,
+  leaveListQuery,
+  officeLeaveCreateSchema,
+} from "@shared/schemas/workforce";
 import { ctx, parse } from "../../lib/http";
 import { objectIdParam } from "../../lib/mappers";
 import { staffCompliance, reviewChecklistItem } from "../portal/service";
+import { getAvailability, setAvailability } from "./availability";
+import { cancelLeave, decideLeave, listLeave, requestLeave } from "./leave";
 import {
   createStaff,
   getStaff,
@@ -48,8 +56,50 @@ export function staffRouter(): Router {
     );
   });
 
+  /* Leave and time off across the team (declared before /:id). */
+  router.get("/leave", async (req, res) => {
+    res.json(await listLeave(parse(leaveListQuery, req.query)));
+  });
+  router.post("/leave", async (req, res) => {
+    const { staffId, approve, ...input } = parse(
+      officeLeaveCreateSchema,
+      req.body
+    );
+    res
+      .status(201)
+      .json(
+        await requestLeave(staffId, input, ctx(req), { office: true, approve })
+      );
+  });
+  router.post("/leave/:id/decision", async (req, res) => {
+    res.json(
+      await decideLeave(
+        objectIdParam(req, "id", "Leave request"),
+        parse(leaveDecisionSchema, req.body),
+        ctx(req)
+      )
+    );
+  });
+  router.post("/leave/:id/cancel", async (req, res) => {
+    res.json(
+      await cancelLeave(objectIdParam(req, "id", "Leave request"), ctx(req))
+    );
+  });
+
   router.get("/:id", async (req, res) => {
     res.json(await getStaff(objectIdParam(req, "id", "Team member")));
+  });
+  router.get("/:id/availability", async (req, res) => {
+    res.json(await getAvailability(objectIdParam(req, "id", "Team member")));
+  });
+  router.put("/:id/availability", async (req, res) => {
+    res.json(
+      await setAvailability(
+        objectIdParam(req, "id", "Team member"),
+        parse(availabilitySchema, req.body),
+        ctx(req)
+      )
+    );
   });
   router.patch("/:id", async (req, res) => {
     res.json(

@@ -1,6 +1,25 @@
 import { model, Schema, type Types } from "mongoose";
-import { STAFF_STATUSES, type StaffStatus } from "@shared/enums";
+import {
+  EMPLOYMENT_TYPES,
+  STAFF_STATUSES,
+  type EmploymentType,
+  type StaffStatus,
+} from "@shared/enums";
 import { baseOptions } from "./common";
+
+/** How someone is employed. The office keeps this; it decides which award rules apply to their pay. */
+export interface StaffEmploymentSub {
+  /** Full-time, part-time or casual. Named `kind` because Mongoose reserves `type` inside a schema. */
+  kind: EmploymentType | null;
+  /** An entry in the Pay rules classification list. */
+  classificationId: string | null;
+  /** Hours a week they are engaged for. */
+  contractedHours: number;
+  /** Their employee number in the payroll system. */
+  payrollId: string;
+  /** A rate agreed with this person that replaces the classification's, in cents. */
+  payRateOverrideCents: number | null;
+}
 
 export interface StaffDoc {
   _id: Types.ObjectId;
@@ -14,6 +33,7 @@ export interface StaffDoc {
   userId: Types.ObjectId | null;
   /** True while the worker transports participants, which makes the vehicle checks mandatory. */
   transportsParticipants: boolean;
+  employment?: StaffEmploymentSub;
   rev: number;
   createdAt: Date;
   updatedAt: Date;
@@ -30,6 +50,13 @@ const staffSchema = new Schema<StaffDoc>(
     notes: { type: String, default: "" },
     userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
     transportsParticipants: { type: Boolean, default: false },
+    employment: {
+      kind: { type: String, enum: [...EMPLOYMENT_TYPES, null], default: null },
+      classificationId: { type: String, default: null },
+      contractedHours: { type: Number, default: 0, min: 0 },
+      payrollId: { type: String, default: "" },
+      payRateOverrideCents: { type: Number, default: null },
+    },
     rev: { type: Number, default: 0 },
   },
   baseOptions

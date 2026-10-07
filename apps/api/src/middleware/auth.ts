@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { effectiveModules } from "@shared/access";
 import { ACCESS_COOKIE } from "@shared/const";
 import type { UserRole } from "@shared/enums";
 import { errors } from "../lib/errors";
@@ -25,7 +26,7 @@ export async function authenticate(
     throw errors.unauthenticated();
   const [user, session] = await Promise.all([
     User.findById(claims.sub)
-      .select("name email role status tokenVersion staffId")
+      .select("name email role modules status tokenVersion staffId")
       .lean<
         Pick<
           UserDoc,
@@ -33,6 +34,7 @@ export async function authenticate(
           | "name"
           | "email"
           | "role"
+          | "modules"
           | "status"
           | "tokenVersion"
           | "staffId"
@@ -60,10 +62,21 @@ export async function authenticate(
       name: user.name,
       email: user.email,
       role: user.role,
+      modules: effectiveModules(user.role, user.modules),
       staffId: user.staffId ? String(user.staffId) : null,
     },
     sessionId: String(session._id),
   };
+  next();
+}
+
+/** The back office: Admins and approved office users. Support workers use their own portal. */
+export function requireOffice(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): void {
+  if (!req.auth || req.auth.user.role === "staff") throw errors.forbidden();
   next();
 }
 

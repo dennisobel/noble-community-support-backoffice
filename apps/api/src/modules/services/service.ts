@@ -32,6 +32,7 @@ export function toServiceDTO(service: ServiceDoc): ServiceDTO {
       : null,
     budgetCategory: service.budgetCategory,
     supportItemNumber: service.supportItemNumber ?? "",
+    payAs: service.payAs ?? "Hours worked",
     active: service.active,
     rateHistory: (service.rateHistory ?? []).map(entry => ({
       rate: fromCents(entry.rateCents),
@@ -94,6 +95,7 @@ export async function createService(
       transportUnit: input.transport ? "Kilometre" : null,
       budgetCategory,
       supportItemNumber: input.supportItemNumber ?? "",
+      payAs: input.payAs ?? "Hours worked",
       active: input.active,
       rateHistory: [{ rateCents, changedAt: new Date(), changedBy: ctx.actor }],
     });
@@ -129,6 +131,7 @@ export async function updateService(
   if (input.active !== undefined) $set.active = input.active;
   if (input.supportItemNumber !== undefined)
     $set.supportItemNumber = input.supportItemNumber;
+  if (input.payAs !== undefined) $set.payAs = input.payAs;
   if (input.budgetCategory !== undefined)
     $set.budgetCategory = await canonicalCategory(input.budgetCategory);
   if (input.transport !== undefined) {

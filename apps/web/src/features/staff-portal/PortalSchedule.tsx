@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { Link, useParams } from "wouter";
 import type { PortalShiftDTO } from "@shared/dto";
 import { addDays, startOfWeek, todayIn } from "@shared/logic/time";
 import { DEFAULT_TIMEZONE } from "@shared/const";
@@ -7,6 +8,44 @@ import { usePortalShifts } from "@/api/hooks";
 import { ErrorBlock, LoadingBlock } from "@/components/app/ui";
 import { prettyDate } from "@/lib/format";
 import { Empty, ShiftCard } from "./kit";
+import { PortalAvailability, PortalLeave, PortalTimesheets } from "./PortalTime";
+
+const SECTIONS = [
+  ["roster", "Roster"],
+  ["availability", "Availability"],
+  ["time-off", "Time off"],
+  ["timesheets", "Timesheets"],
+] as const;
+
+/** Everything about the worker's time: when they are rostered, when they can work, and their hours. */
+export default function PortalSchedule() {
+  const params = useParams<{ section?: string }>();
+  const section =
+    SECTIONS.find(([key]) => key === params.section)?.[0] ?? "roster";
+  return (
+    <>
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        {SECTIONS.map(([key, label]) => (
+          <Link
+            key={key}
+            href={key === "roster" ? "/staff/schedule" : `/staff/schedule/${key}`}
+            className={`shrink-0 rounded-full px-3.5 py-1.5 text-[11px] font-bold no-underline ${
+              section === key
+                ? "bg-[#12766f] text-white"
+                : "border border-[#dbe4e0] bg-white text-[#54636b]"
+            }`}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+      {section === "roster" && <RosterWeek />}
+      {section === "availability" && <PortalAvailability />}
+      {section === "time-off" && <PortalLeave />}
+      {section === "timesheets" && <PortalTimesheets />}
+    </>
+  );
+}
 
 const dayName = (ymd: string) =>
   new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-AU", {
@@ -15,7 +54,7 @@ const dayName = (ymd: string) =>
   });
 
 /** The worker's roster, a week at a time. */
-export default function PortalSchedule() {
+function RosterWeek() {
   const today = todayIn(DEFAULT_TIMEZONE);
   const [monday, setMonday] = useState(() => startOfWeek(today));
   const to = addDays(monday, 6);

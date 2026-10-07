@@ -30,6 +30,8 @@ export interface WorkspaceDoc {
   };
   providerTravelRateCents: number;
   budgetCategories: string[];
+  /** The no-login feedback form: whether it is open, and the token in its link. */
+  feedbackForm?: { enabled: boolean; token: string | null };
   setupCompletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -98,6 +100,10 @@ const workspaceSchema = new Schema<WorkspaceDoc>(
     budgetCategories: {
       type: [String],
       default: () => [...DEFAULT_BUDGET_CATEGORIES],
+    },
+    feedbackForm: {
+      enabled: { type: Boolean, default: false },
+      token: { type: String, default: null },
     },
     setupCompletedAt: { type: Date, default: null },
   },

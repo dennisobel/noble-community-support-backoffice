@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { SessionDTO } from "@shared/dto";
+import type { AccessModule } from "@shared/enums";
 import { api, ApiError, onSessionExpired } from "@/api/client";
 
 interface AuthValue {
@@ -123,7 +124,8 @@ export function RequireRole({
   role,
   children,
 }: {
-  role: "admin" | "staff";
+  /** "office" is everyone who uses the back office: Admins and the roles an Admin approves. */
+  role: "office" | "staff";
   children: ReactNode;
 }) {
   const { session, loading } = useAuth();
@@ -131,7 +133,18 @@ export function RequireRole({
   if (loading) return <FullScreenLoader />;
   if (!session)
     return <Redirect to={`/login?next=${encodeURIComponent(location)}`} />;
-  if (session.user.role !== role)
+  if ((session.user.role === "staff") !== (role === "staff"))
     return <Redirect to={homeFor(session.user.role)} />;
   return <>{children}</>;
+}
+
+/** What the signed-in user may open in the back office. Admins can open everything. */
+export function useAccess() {
+  const { session } = useAuth();
+  const user = session?.user;
+  return {
+    role: user?.role,
+    isAdmin: user?.role === "admin",
+    can: (module: AccessModule) => Boolean(user?.modules.includes(module)),
+  };
 }

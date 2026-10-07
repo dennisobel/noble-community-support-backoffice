@@ -2,7 +2,9 @@ import { recoverStaleJobs } from "./lib/jobs";
 import { logger } from "./lib/logger";
 import { storage } from "./lib/storage";
 import { purgeDeletedDocuments } from "./modules/documents/service";
+import { purgeEmptyNotes } from "./modules/notes/service";
 import { enqueueExpirySweep } from "./modules/portal/expiry";
+import { completeStuckRequests } from "./modules/signatures/signing";
 import { enqueueXeroPoll } from "./modules/xero/service";
 
 const SIX_HOURS = 6 * 60 * 60_000;
@@ -11,14 +13,34 @@ const ONE_DAY = 24 * 60 * 60_000;
 /** Periodic housekeeping: stale upload temp files, soft-deleted documents older than 30 days, stuck jobs. */
 export async function runMaintenance(): Promise<void> {
   try {
-    const [tempRemoved, documentsPurged, jobsRecovered] = await Promise.all([
+    const [
+      tempRemoved,
+      documentsPurged,
+      jobsRecovered,
+      notesPurged,
+      signaturesSealed,
+    ] = await Promise.all([
       storage.sweepTemp(60 * 60_000),
       purgeDeletedDocuments(30),
       recoverStaleJobs(),
+      purgeEmptyNotes(ONE_DAY),
+      completeStuckRequests(),
     ]);
-    if (tempRemoved || documentsPurged || jobsRecovered)
+    if (
+      tempRemoved ||
+      documentsPurged ||
+      jobsRecovered ||
+      notesPurged ||
+      signaturesSealed
+    )
       logger().info(
-        { tempRemoved, documentsPurged, jobsRecovered },
+        {
+          tempRemoved,
+          documentsPurged,
+          jobsRecovered,
+          notesPurged,
+          signaturesSealed,
+        },
         "Maintenance completed"
       );
   } catch (error) {

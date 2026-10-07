@@ -27,6 +27,14 @@ const PublicInvoicePage = lazy(
   () => import("@/features/invoices/PublicInvoicePage")
 );
 
+const PublicSignPage = lazy(
+  () => import("@/features/signatures/PublicSignPage")
+);
+
+const PublicFeedbackPage = lazy(
+  () => import("@/features/feedback/PublicFeedbackPage")
+);
+
 const StaffShell = lazy(() => import("@/features/staff-portal/StaffShell"));
 
 const queryClient = new QueryClient({
@@ -57,11 +65,23 @@ function Router() {
           <PublicInvoicePage />
         </Suspense>
       </Route>
+      {/* Opened from a signing link: no session, the token is the credential. */}
+      <Route path="/sign/:token">
+        <Suspense fallback={<FullScreenLoader label="Opening the document…" />}>
+          <PublicSignPage />
+        </Suspense>
+      </Route>
+      {/* The feedback form an organisation publishes: no session, anyone holding the link can send. */}
+      <Route path="/feedback/:token">
+        <Suspense fallback={<FullScreenLoader label="Opening the form…" />}>
+          <PublicFeedbackPage />
+        </Suspense>
+      </Route>
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path={/^\/app(?:\/.*)?$/}>
         <RequireAuth>
-          <RequireRole role="admin">
+          <RequireRole role="office">
             <AppShell />
           </RequireRole>
         </RequireAuth>

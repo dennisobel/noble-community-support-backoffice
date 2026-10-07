@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Clock3,
   MapPin,
+  MessagesSquare,
   Plus,
   ShieldAlert,
   Trash2,
@@ -312,6 +313,17 @@ function ShiftDrawer({
                     {item.label}
                   </Btn>
                 ))}
+              {editing && (
+                <Btn
+                  variant="quiet"
+                  disabled={busy}
+                  title="Start a conversation with the workers rostered on this shift"
+                  onClick={() => navigate(`/app/messages?shift=${initial.id}`)}
+                >
+                  <MessagesSquare size={14} />
+                  Message the workers
+                </Btn>
+              )}
               {editing &&
                 (initial.status === "Planned" ||
                   initial.status === "Cancelled") &&

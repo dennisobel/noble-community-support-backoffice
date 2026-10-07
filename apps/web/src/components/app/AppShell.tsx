@@ -2,12 +2,18 @@ import {
   AudioLines,
   BarChart3,
   Bell,
+  CalendarCheck,
   CalendarDays,
+  Clock,
+  FileSignature,
   FolderOpen,
   HandHeart,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquareHeart,
+  MessagesSquare,
+  NotebookPen,
   Radio,
   Search,
   Settings,
@@ -19,13 +25,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Link, Route, Switch, useLocation } from "wouter";
+import { Link, Redirect, Route, Switch, useLocation } from "wouter";
 import {
   useMarkNotificationsRead,
   useNotifications,
   useSearch,
+  useUnreadMessages,
 } from "@/api/hooks";
-import { useAuth } from "@/lib/auth";
+import { ROLE_LABELS } from "@shared/access";
+import type { AccessModule } from "@shared/enums";
+import { useAccess, useAuth } from "@/lib/auth";
 import { prettyDate, timeAgo } from "@/lib/format";
 import { Avatar, Btn, EmptyState, LoadingBlock, useDebounced } from "./ui";
 
@@ -42,6 +51,12 @@ const InvoicePreviewPage = lazy(
   () => import("@/features/invoices/InvoicePreviewPage")
 );
 const InvoicesPage = lazy(() => import("@/features/invoices/InvoicesPage"));
+const SignaturesPage = lazy(
+  () => import("@/features/signatures/SignaturesPage")
+);
+const SignatureRequestPage = lazy(
+  () => import("@/features/signatures/SignatureRequestPage")
+);
 const RecordEditorPage = lazy(
   () => import("@/features/records/RecordEditorPage")
 );
@@ -52,7 +67,12 @@ const ReportsPage = lazy(() => import("@/features/reports/ReportsPage"));
 const RosterPage = lazy(() => import("@/features/roster/RosterPage"));
 const ServicesPage = lazy(() => import("@/features/services/ServicesPage"));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
+const MyDayPage = lazy(() => import("@/features/my-day/MyDayPage"));
+const NotesPage = lazy(() => import("@/features/notes/NotesPage"));
 const StaffPage = lazy(() => import("@/features/staff/StaffPage"));
+const PayrollPage = lazy(() => import("@/features/payroll/PayrollPage"));
+const FeedbackPage = lazy(() => import("@/features/feedback/FeedbackPage"));
+const MessagesPage = lazy(() => import("@/features/messages/MessagesPage"));
 const LiveTrackingPage = lazy(
   () => import("@/features/tracking/LiveTrackingPage")
 );
@@ -76,6 +96,25 @@ const NAV: NavItem[] = [
     icon: LayoutDashboard,
     href: "/app",
     active: path => path === "/app" || path === "/app/",
+  },
+  // Everyone approved gets these two, whatever modules they were given.
+  {
+    name: "My day",
+    icon: CalendarCheck,
+    href: "/app/my-day",
+    active: path => path.startsWith("/app/my-day"),
+  },
+  {
+    name: "Notes",
+    icon: NotebookPen,
+    href: "/app/notes",
+    active: path => path.startsWith("/app/notes"),
+  },
+  {
+    name: "Messages",
+    icon: MessagesSquare,
+    href: "/app/messages",
+    active: path => path.startsWith("/app/messages"),
   },
   {
     name: "Rostering",
@@ -105,6 +144,12 @@ const NAV: NavItem[] = [
     active: path => path.startsWith("/app/files"),
   },
   {
+    name: "Signatures",
+    icon: FileSignature,
+    href: "/app/signatures",
+    active: path => path.startsWith("/app/signatures"),
+  },
+  {
     name: "Services",
     icon: HandHeart,
     href: "/app/services",
@@ -123,6 +168,12 @@ const NAV: NavItem[] = [
     active: path => path.startsWith("/app/staff"),
   },
   {
+    name: "Timesheets & pay",
+    icon: Clock,
+    href: "/app/payroll",
+    active: path => path.startsWith("/app/payroll"),
+  },
+  {
     name: "Reports",
     icon: BarChart3,
     href: "/app/reports",
@@ -133,6 +184,12 @@ const NAV: NavItem[] = [
     icon: ShieldAlert,
     href: "/app/worker-reports",
     active: path => path.startsWith("/app/worker-reports"),
+  },
+  {
+    name: "Feedback",
+    icon: MessageSquareHeart,
+    href: "/app/feedback",
+    active: path => path.startsWith("/app/feedback"),
   },
   {
     name: "Voice",
@@ -148,6 +205,34 @@ const NAV: NavItem[] = [
   },
 ];
 
+/** Which module each sidebar entry belongs to. Settings has none: profile, notifications and privacy are everyone's. */
+const NAV_MODULE: Record<string, AccessModule | undefined> = {
+  "/app": "dashboard",
+  "/app/roster": "roster",
+  "/app/live": "live",
+  "/app/clients": "clients",
+  "/app/files": "files",
+  // E-signatures are document work, so they follow the Organisation files module
+  "/app/signatures": "files",
+  "/app/services": "services",
+  "/app/invoices": "invoices",
+  "/app/staff": "staff",
+  "/app/payroll": "payroll",
+  "/app/reports": "reports",
+  "/app/worker-reports": "worker-reports",
+  "/app/feedback": "feedback",
+  "/app/voice": "voice",
+};
+
+/** The sidebar entries this user may open. */
+function useVisibleNav(): NavItem[] {
+  const { can } = useAccess();
+  return NAV.filter(item => {
+    const module = NAV_MODULE[item.href];
+    return !module || can(module);
+  });
+}
+
 function pageTitle(path: string): string {
   if (/^\/app\/clients\/[^/]+/.test(path)) return "Client profile";
   if (path.startsWith("/app/records/new")) return "New service record";
@@ -155,6 +240,10 @@ function pageTitle(path: string): string {
   if (path.startsWith("/app/review")) return "Review queue";
   if (path.startsWith("/app/invoices/new")) return "Create invoice";
   if (/^\/app\/invoices\/[^/]+/.test(path)) return "Invoice preview";
+  if (path.startsWith("/app/signatures/") && path.length > 16)
+    return "Signature request";
+  if (path.startsWith("/app/payroll/runs/")) return "Pay run";
+  if (path.startsWith("/app/feedback")) return "Complaints & feedback";
   if (path.startsWith("/app/voice/record")) return "Recorder";
   if (path.startsWith("/app/voice/settings")) return "Voice settings";
   if (/^\/app\/voice\/[^/]+/.test(path)) return "Voice detail";
@@ -168,21 +257,32 @@ function NavLinks({
   path: string;
   onNavigate?: () => void;
 }) {
+  const visible = useVisibleNav();
+  // Conversations with something new, shown beside "Messages".
+  const unread = useUnreadMessages().data?.unread ?? 0;
   return (
     <>
-      {NAV.map(({ name, icon: Icon, href, active }) => (
-        <Link
-          key={name}
-          href={href}
-          onClick={onNavigate}
-          className={`nav-link ${active(path) ? "active" : ""}`}
-          title={name}
-          aria-current={active(path) ? "page" : undefined}
-        >
-          <Icon size={17} />
-          <span className="nav-label">{name}</span>
-        </Link>
-      ))}
+      {visible.map(({ name, icon: Icon, href, active }) => {
+        const count = href === "/app/messages" ? unread : 0;
+        return (
+          <Link
+            key={name}
+            href={href}
+            onClick={onNavigate}
+            className={`nav-link ${active(path) ? "active" : ""}`}
+            title={count ? `${name} (${count} new)` : name}
+            aria-current={active(path) ? "page" : undefined}
+          >
+            <Icon size={17} />
+            <span className="nav-label flex-1">{name}</span>
+            {count > 0 && (
+              <span className="nav-label rounded-full bg-[#e18a65] px-1.5 text-[10px] font-bold leading-4 text-white">
+                {count}
+              </span>
+            )}
+          </Link>
+        );
+      })}
     </>
   );
 }
@@ -424,6 +524,8 @@ function NotificationBell() {
 export default function AppShell() {
   const [path] = useLocation();
   const { session, signOut } = useAuth();
+  const { can } = useAccess();
+  const visible = useVisibleNav();
   const [mobileMenu, setMobileMenu] = useState(false);
   const name = session?.user.name ?? "";
   const title = pageTitle(path);
@@ -432,6 +534,14 @@ export default function AppShell() {
     document.title = `${title} · Noble Community Support`;
     window.scrollTo({ top: 0 });
   }, [title, path]);
+
+  // The sidebar hides modules a person does not have. If they land on one anyway, say so (or send them on).
+  const current = NAV.find(item => item.active(path));
+  const needed = current ? NAV_MODULE[current.href] : undefined;
+  const blocked = Boolean(needed && !can(needed));
+  const first = visible[0];
+  if (blocked && first && (path === "/app" || path === "/app/"))
+    return <Redirect to={first.href} />;
 
   return (
     <div className="app-shell">
@@ -448,10 +558,14 @@ export default function AppShell() {
         <div className="nav-section mb-2 px-3 text-[9px] font-bold uppercase tracking-[.15em] text-[#82989f]">
           Workspace
         </div>
-        <nav className="flex flex-col gap-1" aria-label="Workspace">
+        {/* The list scrolls by itself when the window is too short, so the footer never falls off. */}
+        <nav
+          className="sidebar-nav flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
+          aria-label="Workspace"
+        >
           <NavLinks path={path} />
         </nav>
-        <div className="mt-auto border-t border-white/10 pt-4">
+        <div className="mt-3 border-t border-white/10 pt-4">
           <Link
             href="/app/settings/profile"
             className="flex items-center gap-2 rounded-lg bg-white/5 p-2.5"
@@ -459,7 +573,9 @@ export default function AppShell() {
             <Avatar name={name} small />
             <div className="side-footer-text min-w-0">
               <div className="truncate text-[11px] font-semibold">{name}</div>
-              <div className="text-[9px] text-[#a6b7ba]">Admin</div>
+              <div className="text-[9px] text-[#a6b7ba]">
+                {session ? ROLE_LABELS[session.user.role] : ""}
+              </div>
             </div>
           </Link>
           <p className="side-footer-text px-2 pt-3 text-[9px] text-[#82989f]">
@@ -492,7 +608,9 @@ export default function AppShell() {
               <span className="block text-xs font-semibold text-[#344854]">
                 {name}
               </span>
-              <span className="block text-[10px] text-[#87949b]">Admin</span>
+              <span className="block text-[10px] text-[#87949b]">
+                {session ? ROLE_LABELS[session.user.role] : ""}
+              </span>
             </span>
             <Avatar name={name} />
             <button
@@ -506,9 +624,24 @@ export default function AppShell() {
           </div>
         </header>
         <main className="content">
+          {blocked ? (
+            <EmptyState
+              title="You don't have access to this area"
+              text="An Admin chooses which parts of the workspace each person can open. Ask them if you need this one."
+              action={
+                first ? (
+                  <Link href={first.href}>
+                    <Btn>Go to {first.name}</Btn>
+                  </Link>
+                ) : undefined
+              }
+            />
+          ) : (
           <Suspense fallback={<LoadingBlock />}>
             <Switch>
               <Route path="/app" component={DashboardPage} />
+              <Route path="/app/my-day" component={MyDayPage} />
+              <Route path="/app/notes/:id?" component={NotesPage} />
               <Route path="/app/roster" component={RosterPage} />
               <Route path="/app/clients" component={ClientsPage} />
               <Route
@@ -519,11 +652,22 @@ export default function AppShell() {
               <Route path="/app/records/new" component={RecordEditorPage} />
               <Route path="/app/records/:id" component={RecordEditorPage} />
               <Route path="/app/files" component={OrganisationFilesPage} />
+              <Route path="/app/signatures" component={SignaturesPage} />
+              <Route
+                path="/app/signatures/:id"
+                component={SignatureRequestPage}
+              />
               <Route path="/app/services" component={ServicesPage} />
               <Route path="/app/invoices" component={InvoicesPage} />
               <Route path="/app/invoices/new" component={InvoicesPage} />
               <Route path="/app/invoices/:id" component={InvoicePreviewPage} />
               <Route path="/app/staff/:section?" component={StaffPage} />
+              <Route
+                path="/app/payroll/:section?/:id?"
+                component={PayrollPage}
+              />
+              <Route path="/app/feedback/:id?" component={FeedbackPage} />
+              <Route path="/app/messages/:id?" component={MessagesPage} />
               <Route path="/app/live" component={LiveTrackingPage} />
               <Route
                 path="/app/worker-reports/:section?"
@@ -548,12 +692,13 @@ export default function AppShell() {
               </Route>
             </Switch>
           </Suspense>
+          )}
         </main>
       </div>
 
       <nav className="mobile-nav" aria-label="Quick navigation">
-        {NAV.filter(item =>
-          ["Dashboard", "Rostering", "Clients", "Organisation files"].includes(
+        {visible.filter(item =>
+          ["Dashboard", "My day", "Notes", "Rostering", "Clients"].includes(
             item.name
           )
         ).map(({ name: label, icon: Icon, href, active }) => (

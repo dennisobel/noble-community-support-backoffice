@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Clock,
   MapPin,
+  MessagesSquare,
   NotebookPen,
   Navigation,
   Play,
@@ -371,6 +372,13 @@ export default function PortalShiftPage() {
         >
           <NotebookPen size={15} />
           {data.recordId ? "Open progress note" : "Write progress note"}
+        </Link>
+        <Link
+          href={`/staff/messages?shift=${data.id}`}
+          className="portal-secondary"
+        >
+          <MessagesSquare size={15} />
+          Message the office about this shift
         </Link>
       </div>
     </>

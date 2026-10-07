@@ -147,6 +147,58 @@ export function zonedStartOfDay(ymd: string, timeZone: string): Date {
   return new Date(instant);
 }
 
+/** 0 = Monday … 6 = Sunday. */
+export function weekdayIndex(ymd: string): number {
+  return (ymdToUtcDate(ymd).getUTCDay() + 6) % 7;
+}
+
+/** Minutes past midnight → "HH:mm". Anything past 24 hours wraps to the next day's clock. */
+export function hmOf(minutes: number): string {
+  const wrapped = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+}
+
+/** "7.5" from 450 minutes: hours to two decimals, for display and exports. */
+export function hoursOf(minutes: number): number {
+  return Math.round((minutes / 60) * 100) / 100;
+}
+
+/** The calendar date and the minutes past midnight of an instant, as a clock in the timezone shows it. */
+export function localParts(
+  timeZone: string,
+  instant: Date
+): { date: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string) =>
+    parts.find(part => part.type === type)?.value ?? "";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+}
+
+/** The UTC instant of a local date and clock time in the timezone. */
+export function zonedInstant(
+  ymd: string,
+  minutes: number,
+  timeZone: string
+): Date {
+  const guess = ymdToUtcDate(ymd).getTime() + minutes * 60_000;
+  const first = offsetMinutes(new Date(guess), timeZone);
+  let instant = guess - first * 60_000;
+  const second = offsetMinutes(new Date(instant), timeZone);
+  if (second !== first) instant = guess - second * 60_000;
+  return new Date(instant);
+}
+
 export function isValidTimeZone(timeZone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-AU", { timeZone });

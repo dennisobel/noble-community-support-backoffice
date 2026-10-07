@@ -1,7 +1,9 @@
 import { model, Schema, type Types } from "mongoose";
 import {
+  SERVICE_PAY_TYPES,
   SERVICE_UNITS,
   TRANSPORT_UNITS,
+  type ServicePayType,
   type ServiceUnit,
   type TransportUnit,
 } from "@shared/enums";
@@ -17,6 +19,8 @@ export interface ServiceDoc {
   transportUnit: TransportUnit | null;
   budgetCategory: string;
   supportItemNumber: string;
+  /** How a shift of this service is paid to the worker: by the hour, or as a sleepover allowance. */
+  payAs?: ServicePayType;
   active: boolean;
   rateHistory: Array<{
     rateCents: number;
@@ -42,6 +46,7 @@ const serviceSchema = new Schema<ServiceDoc>(
     },
     budgetCategory: { type: String, required: true },
     supportItemNumber: { type: String, default: "" },
+    payAs: { type: String, enum: SERVICE_PAY_TYPES, default: "Hours worked" },
     active: { type: Boolean, default: true },
     rateHistory: [
       {

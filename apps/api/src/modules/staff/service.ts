@@ -30,6 +30,7 @@ import {
   type UserDoc,
 } from "../../models";
 import { inviteStaffAccount, type InviteResult } from "../auth/service";
+import { paySettingsDoc } from "../payroll/settings";
 import {
   checklistItemsDTO,
   checklistProgress,
@@ -58,6 +59,8 @@ export function toStaffDTO(
     progress?: ChecklistProgress;
     accountStatus?: StaffAccountStatus;
     lastLoginAt?: string | null;
+    /** Classification names by id, so the directory can show one without knowing any rate. */
+    classifications?: Map<string, string>;
   } = {}
 ): StaffDTO {
   const progress = extras.progress ?? {
@@ -83,6 +86,16 @@ export function toStaffDTO(
     userId: staff.userId ? String(staff.userId) : null,
     lastLoginAt: extras.lastLoginAt ?? null,
     checklist: progress,
+    employment: {
+      type: staff.employment?.kind ?? null,
+      classificationId: staff.employment?.classificationId ?? null,
+      classificationName:
+        extras.classifications?.get(
+          staff.employment?.classificationId ?? ""
+        ) ?? "",
+      contractedHours: staff.employment?.contractedHours ?? 0,
+      payrollId: staff.employment?.payrollId ?? "",
+    },
     createdAt: isoRequired(staff.createdAt),
     updatedAt: isoRequired(staff.updatedAt),
     rev: staff.rev ?? 0,
@@ -99,7 +112,7 @@ const duplicateEmail = () =>
 async function contextFor(staff: StaffDoc[], today: string) {
   const ids = staff.map(member => member._id);
   const emails = staff.map(member => member.email);
-  const [profiles, accounts, applications] = await Promise.all([
+  const [profiles, accounts, applications, pay] = await Promise.all([
     StaffProfile.find({ staffId: { $in: ids } }).lean<StaffProfileDoc[]>(),
     User.find({ staffId: { $in: ids } })
       .select("staffId status invitation lastLoginAt")
@@ -113,7 +126,11 @@ async function contextFor(staff: StaffDoc[], today: string) {
     StaffApplication.find({ email: { $in: emails } })
       .sort({ createdAt: -1 })
       .lean<StaffApplicationDoc[]>(),
+    paySettingsDoc(),
   ]);
+  const classifications = new Map(
+    (pay.classifications ?? []).map(item => [item.id, item.name])
+  );
   const profileByStaff = new Map(
     profiles.map(profile => [String(profile.staffId), profile])
   );
@@ -141,8 +158,41 @@ async function contextFor(staff: StaffDoc[], today: string) {
       lastLoginAt: account?.lastLoginAt
         ? account.lastLoginAt.toISOString()
         : null,
+      classifications,
     });
   });
+}
+
+interface EmploymentInput {
+  employmentType?: StaffDTO["employment"]["type"] | "";
+  classificationId?: string | null;
+  contractedHours?: number;
+  payrollId?: string;
+}
+
+/** The employment fields of a create or update. Only the ones that were sent are returned. */
+async function employmentChanges(
+  input: EmploymentInput
+): Promise<Partial<StaffDoc["employment"] & object>> {
+  const changes: Partial<StaffDoc["employment"] & object> = {};
+  if (input.employmentType !== undefined)
+    changes.kind = input.employmentType || null;
+  if (input.classificationId !== undefined) {
+    const id = input.classificationId || null;
+    if (id) {
+      const pay = await paySettingsDoc();
+      if (!(pay.classifications ?? []).some(item => item.id === id))
+        throw errors.validation(
+          "Choose a classification from the list in Pay rules.",
+          [{ path: "classificationId", message: "Unknown classification." }]
+        );
+    }
+    changes.classificationId = id;
+  }
+  if (input.contractedHours !== undefined)
+    changes.contractedHours = input.contractedHours;
+  if (input.payrollId !== undefined) changes.payrollId = input.payrollId;
+  return changes;
 }
 
 export async function listStaff(
@@ -176,6 +226,7 @@ export async function createStaff(
   input: z.output<typeof staffCreateSchema>,
   ctx: RequestContext
 ): Promise<StaffDTO & { invite?: InviteResult }> {
+  const employment = await employmentChanges(input);
   try {
     const created = await Staff.create({
       name: input.name,
@@ -186,6 +237,14 @@ export async function createStaff(
       status: input.status ?? "Active",
       notes: input.notes ?? "",
       transportsParticipants: input.transportsParticipants ?? false,
+      employment: {
+        kind: null,
+        classificationId: null,
+        contractedHours: 0,
+        payrollId: "",
+        payRateOverrideCents: null,
+        ...employment,
+      },
     });
     await StaffProfile.create({
       staffId: created._id,
@@ -247,6 +306,8 @@ export async function updateStaff(
   ] as const) {
     if (input[key] !== undefined) $set[key] = input[key];
   }
+  for (const [key, value] of Object.entries(await employmentChanges(input)))
+    $set[`employment.${key}`] = value;
   try {
     const updated = await Staff.findOneAndUpdate(
       { _id: id, rev: current.rev },

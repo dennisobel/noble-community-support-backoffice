@@ -25,14 +25,17 @@ import {
   Panel,
   SectionHeading,
 } from "@/components/app/ui";
-import { useAuth } from "@/lib/auth";
+import { useAccess, useAuth } from "@/lib/auth";
 import { formatDateTime, timeAgo } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
+import UsersSettings from "./UsersSettings";
 import XeroSettings from "./XeroSettings";
 
-const SECTIONS = [
-  { slug: "workspace", label: "Workspace" },
-  { slug: "accounting", label: "Accounting (Xero)" },
+/** `admin` sections are the Admin's alone; everything else is for every signed-in user. */
+const SECTIONS: Array<{ slug: string; label: string; admin?: boolean }> = [
+  { slug: "workspace", label: "Workspace", admin: true },
+  { slug: "accounting", label: "Accounting (Xero)", admin: true },
+  { slug: "users", label: "Users & access", admin: true },
   { slug: "profile", label: "My profile" },
   { slug: "notifications", label: "Notifications" },
   { slug: "privacy", label: "Privacy & access" },
@@ -582,12 +585,39 @@ function NotificationSettings() {
   );
 }
 
+/** The workspace audit trail. Admin only: the API refuses everyone else. */
+function AuditLog() {
+  const activity = useActivity({ limit: 40, includeAuth: "true" });
+  return (
+    <Panel title="Audit log">
+      <div className="max-h-[420px] divide-y divide-[#edf0ef] overflow-y-auto">
+        {activity.data?.items.map(entry => (
+          <div
+            key={entry.id}
+            className="flex flex-wrap justify-between gap-2 px-5 py-2.5 text-[11px]"
+          >
+            <span className="text-[#4f626b]">
+              <b>{entry.actor?.name ?? "System"}</b> {entry.summary}
+            </span>
+            <span className="text-[10px] text-[#8a969b]">
+              {formatDateTime(entry.at)}
+            </span>
+          </div>
+        ))}
+        {activity.data && !activity.data.items.length && (
+          <p className="px-5 py-4 text-xs text-[#87949a]">No activity yet.</p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function PrivacySettings() {
   const notify = useNotify();
   const [, navigate] = useLocation();
   const sessions = useAuthSessions();
   const revoke = useRevokeSession();
-  const activity = useActivity({ limit: 40, includeAuth: "true" });
+  const { isAdmin } = useAccess();
   const meta = useMeta();
   const [signingOut, setSigningOut] = useState(false);
   return (
@@ -657,26 +687,7 @@ function PrivacySettings() {
           ))}
         </div>
       </Panel>
-      <Panel title="Audit log">
-        <div className="max-h-[420px] divide-y divide-[#edf0ef] overflow-y-auto">
-          {activity.data?.items.map(entry => (
-            <div
-              key={entry.id}
-              className="flex flex-wrap justify-between gap-2 px-5 py-2.5 text-[11px]"
-            >
-              <span className="text-[#4f626b]">
-                <b>{entry.actor?.name ?? "System"}</b> {entry.summary}
-              </span>
-              <span className="text-[10px] text-[#8a969b]">
-                {formatDateTime(entry.at)}
-              </span>
-            </div>
-          ))}
-          {activity.data && !activity.data.items.length && (
-            <p className="px-5 py-4 text-xs text-[#87949a]">No activity yet.</p>
-          )}
-        </div>
-      </Panel>
+      {isAdmin && <AuditLog />}
       <Panel title="About this workspace">
         <div className="space-y-2 p-5 text-xs text-[#63757d]">
           <p>
@@ -684,8 +695,9 @@ function PrivacySettings() {
             {meta.data?.environment}
           </p>
           <p>
-            <b>Access:</b> one Admin account with full access. Sessions use
-            secure, http-only cookies and expire after inactivity.
+            <b>Access:</b> Admins have full access; everyone else only opens
+            the modules an Admin gave them. Sessions use secure, http-only
+            cookies and expire after inactivity.
           </p>
           <p>
             <b>Data:</b> stored in this workspace's MongoDB database; uploaded
@@ -706,8 +718,19 @@ function PrivacySettings() {
 }
 
 export default function SettingsPage() {
-  const { section = "workspace" } = useParams<{ section?: string }>();
+  const { section: requested = "workspace" } = useParams<{
+    section?: string;
+  }>();
   const [, navigate] = useLocation();
+  const { isAdmin, can } = useAccess();
+  // Workspace, accounting and user access are Admin-only; voice settings need the Voice module.
+  const visible = SECTIONS.filter(
+    item =>
+      (isAdmin || !item.admin) && (item.slug !== "voice" || can("voice"))
+  );
+  const section = visible.some(item => item.slug === requested)
+    ? requested
+    : (visible[0]?.slug ?? "profile");
   useEffect(() => {
     if (section === "voice") navigate("/app/voice/settings", { replace: true });
   }, [section, navigate]);
@@ -719,7 +742,7 @@ export default function SettingsPage() {
       />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[220px_1fr]">
         <nav className="panel h-fit p-2" aria-label="Settings sections">
-          {SECTIONS.map(item => (
+          {visible.map(item => (
             <Link
               key={item.slug}
               href={`/app/settings/${item.slug}`}
@@ -732,6 +755,7 @@ export default function SettingsPage() {
         <div>
           {section === "workspace" && <WorkspaceSettings />}
           {section === "accounting" && <XeroSettings />}
+          {section === "users" && <UsersSettings />}
           {section === "profile" && <ProfileSettings />}
           {section === "notifications" && <NotificationSettings />}
           {section === "privacy" && <PrivacySettings />}

@@ -1,18 +1,34 @@
-import { Check, KeyRound, Mail, Phone, Plus, ShieldOff } from "lucide-react";
+import {
+  Check,
+  KeyRound,
+  Mail,
+  MessagesSquare,
+  Phone,
+  Plus,
+  ShieldOff,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "wouter";
 import type { StaffDTO } from "@shared/dto";
-import { STAFF_STATUSES, type StaffStatus } from "@shared/enums";
+import {
+  EMPLOYMENT_TYPES,
+  STAFF_STATUSES,
+  type EmploymentType,
+  type StaffStatus,
+} from "@shared/enums";
 import { errorMessage } from "@/api/client";
 import {
   useCreateStaff,
   useInviteStaff,
+  usePayClassifications,
   useRevokeStaffAccess,
   useStaff,
   useUpdateStaff,
 } from "@/api/hooks";
 import StaffApplications from "./StaffApplications";
+import StaffAvailability from "./StaffAvailability";
 import StaffCompliance from "./StaffCompliance";
+import StaffLeave from "./StaffLeave";
 import {
   Avatar,
   Btn,
@@ -98,6 +114,13 @@ function AccessPanel({ member }: { member: StaffDTO }) {
               <ShieldOff size={13} /> Turn off access
             </Btn>
           )}
+          {member.userId && member.accountStatus === "Active" && (
+            <Link href={`/app/messages?to=${member.userId}`}>
+              <Btn variant="secondary" className="!h-8 !px-2 text-[11px]">
+                <MessagesSquare size={13} /> Message
+              </Btn>
+            </Link>
+          )}
         </div>
         <FormAlert message={error} />
       </div>
@@ -115,6 +138,7 @@ function StaffDrawer({
   const notify = useNotify();
   const create = useCreateStaff();
   const update = useUpdateStaff();
+  const classifications = usePayClassifications();
   const [form, setForm] = useState({
     name: member?.name ?? "",
     position: member?.position ?? "",
@@ -124,19 +148,36 @@ function StaffDrawer({
     status: (member?.status ?? "Active") as StaffStatus,
     notes: member?.notes ?? "",
   });
+  const [employment, setEmployment] = useState({
+    employmentType: (member?.employment.type ?? "") as EmploymentType | "",
+    classificationId: member?.employment.classificationId ?? "",
+    contractedHours: member?.employment.contractedHours
+      ? String(member.employment.contractedHours)
+      : "",
+    payrollId: member?.employment.payrollId ?? "",
+  });
   const [error, setError] = useState("");
   const set = (key: keyof typeof form) => (value: string) =>
     setForm(current => ({ ...current, [key]: value }));
+  const setJob = (key: keyof typeof employment) => (value: string) =>
+    setEmployment(current => ({ ...current, [key]: value }));
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    const job = {
+      employmentType: employment.employmentType,
+      classificationId: employment.classificationId,
+      contractedHours: Number(employment.contractedHours) || 0,
+      payrollId: employment.payrollId.trim(),
+    };
     try {
       if (member) {
         const saved = await update.mutateAsync({
           id: member.id,
           rev: member.rev,
           ...form,
+          ...job,
         });
         notify(
           saved.warnings.length
@@ -145,7 +186,7 @@ function StaffDrawer({
           saved.warnings.length ? "info" : "success"
         );
       } else {
-        const saved = await create.mutateAsync(form);
+        const saved = await create.mutateAsync({ ...form, ...job });
         notify(`${saved.name} added to the team directory.`);
       }
       onClose();
@@ -257,11 +298,81 @@ function StaffDrawer({
             </label>
           </div>
         </Panel>
+        <Panel title="Employment">
+          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+            <label className="label">
+              Employment type
+              <select
+                className="select mt-1"
+                value={employment.employmentType}
+                onChange={event => setJob("employmentType")(event.target.value)}
+              >
+                <option value="">Not recorded</option>
+                {EMPLOYMENT_TYPES.map(type => (
+                  <option key={type}>{type}</option>
+                ))}
+              </select>
+              <span className="field-help block font-normal">
+                Decides which award rules apply: casuals get a loading, part-time
+                and casual staff a minimum engagement.
+              </span>
+            </label>
+            <label className="label">
+              Award classification
+              <select
+                className="select mt-1"
+                value={employment.classificationId}
+                onChange={event =>
+                  setJob("classificationId")(event.target.value)
+                }
+              >
+                <option value="">Not recorded</option>
+                {(classifications.data ?? []).map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <span className="field-help block font-normal">
+                {classifications.data && !classifications.data.length
+                  ? "None set up yet. Add them under Timesheets & pay → Pay rules."
+                  : "The pay rate comes from this, in Timesheets & pay."}
+              </span>
+            </label>
+            <label className="label">
+              Contracted hours a week
+              <input
+                type="number"
+                min="0"
+                max="80"
+                step="0.5"
+                className="input mt-1"
+                value={employment.contractedHours}
+                onChange={event =>
+                  setJob("contractedHours")(event.target.value)
+                }
+                placeholder="e.g. 20"
+              />
+            </label>
+            <label className="label">
+              Payroll ID
+              <input
+                className="input mt-1"
+                value={employment.payrollId}
+                onChange={event => setJob("payrollId")(event.target.value)}
+                placeholder="Their number in the payroll system"
+              />
+            </label>
+          </div>
+        </Panel>
         <FormAlert message={error} />
       </form>
       {member && (
         <>
           <AccessPanel member={member} />
+          <div className="mt-4">
+            <StaffAvailability member={member} />
+          </div>
           <div className="mt-4">
             <StaffCompliance member={member} />
           </div>
@@ -273,7 +384,10 @@ function StaffDrawer({
 
 export default function StaffPage() {
   const params = useParams<{ section?: string }>();
-  const tab = params.section === "applications" ? "applications" : "directory";
+  const tab =
+    params.section === "applications" || params.section === "leave"
+      ? params.section
+      : "directory";
   const [filter, setFilter] = useState("all");
   const staff = useStaff({ status: filter });
   const [drawer, setDrawer] = useState<{ member?: StaffDTO } | null>(null);
@@ -282,9 +396,9 @@ export default function StaffPage() {
     <>
       <SectionHeading
         title="Team"
-        subtitle="Support workers, their portal access and their onboarding documents."
+        subtitle="Support workers, how they are employed, when they can work and their onboarding documents."
         actions={
-          tab === "applications" ? null : (
+          tab !== "directory" ? null : (
             <>
               <select
                 className="select h-[38px] w-[150px]"
@@ -313,6 +427,7 @@ export default function StaffPage() {
           [
             ["directory", "Directory"],
             ["applications", "Access requests"],
+            ["leave", "Leave"],
           ] as const
         ).map(([key, label]) => (
           <Link
@@ -331,6 +446,8 @@ export default function StaffPage() {
 
       {tab === "applications" ? (
         <StaffApplications />
+      ) : tab === "leave" ? (
+        <StaffLeave />
       ) : (
         <StaffDirectory
           staff={staff}
@@ -385,6 +502,13 @@ function StaffDirectory({
                 <div className="mt-1 text-xs font-semibold text-[#495e68]">
                   {member.position}
                 </div>
+                {member.employment.type && (
+                  <div className="mt-1 text-[10px] text-[#819097]">
+                    {member.employment.type}
+                    {member.employment.classificationName &&
+                      ` · ${member.employment.classificationName}`}
+                  </div>
+                )}
                 <div className="mt-3 flex items-center gap-1.5 break-all text-xs text-[#52666f]">
                   <Mail size={12} className="shrink-0 text-[#849198]" />
                   {member.email}

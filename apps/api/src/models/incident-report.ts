@@ -3,11 +3,28 @@ import {
   INCIDENT_CATEGORIES,
   INCIDENT_SEVERITIES,
   REPORT_STATUSES,
+  REPORTABLE_INCIDENT_TYPES,
   type IncidentCategory,
   type IncidentSeverity,
+  type ReportableIncidentType,
   type ReportStatus,
 } from "@shared/enums";
 import { actorSchema, baseOptions, type ActorRefSub } from "./common";
+
+/** Whether the incident must go to the NDIS Commission, and what has been lodged so far. */
+export interface IncidentReportableSub {
+  flagged: boolean;
+  /** Stored as `kind` because Mongoose reserves `type` inside a schema. */
+  kind: ReportableIncidentType | null;
+  /** When key personnel became aware. Both deadlines count from here. */
+  awareAt: Date | null;
+  harm: boolean;
+  notifiedAt: Date | null;
+  notifiedReference: string;
+  fiveDayAt: Date | null;
+  note: string;
+  flaggedBy: ActorRefSub | null;
+}
 
 export interface IncidentReportDoc {
   _id: Types.ObjectId;
@@ -32,6 +49,7 @@ export interface IncidentReportDoc {
   reviewNote: string;
   reviewedBy: ActorRefSub | null;
   reviewedAt: Date | null;
+  reportable?: IncidentReportableSub;
   rev: number;
   createdAt: Date;
   updatedAt: Date;
@@ -73,11 +91,27 @@ const incidentReportSchema = new Schema<IncidentReportDoc>(
     reviewNote: { type: String, default: "" },
     reviewedBy: { type: actorSchema, default: null },
     reviewedAt: { type: Date, default: null },
+    reportable: {
+      flagged: { type: Boolean, default: false },
+      kind: {
+        type: String,
+        enum: [...REPORTABLE_INCIDENT_TYPES, null],
+        default: null,
+      },
+      awareAt: { type: Date, default: null },
+      harm: { type: Boolean, default: false },
+      notifiedAt: { type: Date, default: null },
+      notifiedReference: { type: String, default: "" },
+      fiveDayAt: { type: Date, default: null },
+      note: { type: String, default: "" },
+      flaggedBy: { type: actorSchema, default: null },
+    },
     rev: { type: Number, default: 0 },
   },
   baseOptions
 );
 incidentReportSchema.index({ staffId: 1, date: -1 });
+incidentReportSchema.index({ "reportable.flagged": 1 });
 incidentReportSchema.index({ status: 1, date: -1 });
 
 export const IncidentReport = model<IncidentReportDoc>(

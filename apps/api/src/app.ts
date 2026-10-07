@@ -10,6 +10,8 @@ import { logger } from "./lib/logger";
 import { apiNotFound, errorHandler } from "./middleware/errors";
 import { apiRouter } from "./routes";
 
+const LINK_TOKEN = new RegExp("/public/([a-z]+)/[A-Za-z0-9_-]{24,64}");
+
 export function createApp(): Express {
   const cfg = config();
   const app = express();
@@ -38,7 +40,12 @@ export function createApp(): Express {
         ignore: req => Boolean(req.url?.startsWith(`${API_PREFIX}/health`)),
       },
       serializers: {
-        req: req => ({ id: req.id, method: req.method, url: req.url }),
+        // A share or signing link carries its secret in the path, so it is never written to the log.
+        req: req => ({
+          id: req.id,
+          method: req.method,
+          url: String(req.url ?? "").replace(LINK_TOKEN, "/public/$1/[link]"),
+        }),
         res: res => ({ statusCode: res.statusCode }),
       },
     })

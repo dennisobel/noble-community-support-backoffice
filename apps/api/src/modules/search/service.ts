@@ -1,10 +1,10 @@
 import { Router } from "express";
 import type { SearchResultsDTO } from "@shared/dto";
-import type { RecordStatus } from "@shared/enums";
+import type { AccessModule, RecordStatus } from "@shared/enums";
 import { formatNdis, normalizeNdis } from "@shared/logic/ndis";
 import { fromCents } from "@shared/logic/money";
 import { searchQuery } from "@shared/schemas/reports";
-import { escapeRegex, parse } from "../../lib/http";
+import { escapeRegex, parse, requireAuth } from "../../lib/http";
 import {
   DocumentModel,
   Invoice,
@@ -121,10 +121,30 @@ export async function search(q: string): Promise<SearchResultsDTO> {
   };
 }
 
+/** Search spans every module, so each group only goes to people who have the module it comes from. */
+export function limitToModules(
+  results: SearchResultsDTO,
+  user: { role: string; modules: readonly AccessModule[] }
+): SearchResultsDTO {
+  const can = (...wanted: AccessModule[]) =>
+    user.role === "admin" ||
+    wanted.some(module => user.modules.includes(module));
+  return {
+    participants: can("clients", "roster", "invoices", "voice", "files")
+      ? results.participants
+      : [],
+    records: can("clients") ? results.records : [],
+    invoices: can("invoices") ? results.invoices : [],
+    voiceNotes: can("voice") ? results.voiceNotes : [],
+    documents: can("files", "clients") ? results.documents : [],
+  };
+}
+
 export function searchRouter(): Router {
   const router = Router();
   router.get("/", async (req, res) => {
-    res.json(await search(parse(searchQuery, req.query).q));
+    const found = await search(parse(searchQuery, req.query).q);
+    res.json(limitToModules(found, requireAuth(req).user));
   });
   return router;
 }

@@ -202,6 +202,22 @@ export function audioUpload() {
   }).single("audio");
 }
 
+/** A single `file` field holding one picture for a note (the service checks it really is an image). */
+export function noteImageUpload() {
+  return multer({
+    storage: diskStorage(),
+    fileFilter: fileFilter("document"),
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+      files: 1,
+      fields: 5,
+      parts: 10,
+      fieldSize: 8 * 1024,
+      headerPairs: 200,
+    },
+  }).single("file");
+}
+
 export interface VerifiedFile {
   tempPath: string;
   originalName: string;

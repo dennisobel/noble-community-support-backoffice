@@ -141,6 +141,78 @@ docker compose -f docker-compose.prod.yml --env-file .env.production \
   exec api node dist/scripts/cli.js create-admin --email you@org.au --name "Your Name"
 ```
 
+## Giving office staff access
+
+Anyone who is not the first Admin asks for access from the **Request access** link on the sign-in page (`/signup` once the workspace has its Admin). They choose their own password, but the account cannot sign in until an Admin approves it. Admins do that in **Settings → Users & access**: pick a role (Admin, Manager, Coordinator or Finance), then tick the modules the person can open. A role only pre-ticks its usual modules; the ticks are what count. Admins can change someone's access later or switch them off.
+
+- The API enforces the modules, not just the sidebar. [apps/api/src/middleware/access.ts](apps/api/src/middleware/access.ts) lists which module owns each route (anything unlisted is Admin-only) and the read-only lookups other modules need, such as Invoices listing clients.
+- Settings → Workspace, Accounting (Xero) and Users & access are Admin-only. Profile, notifications and privacy are for everyone.
+- Everyone who is approved also gets **My day** (their own shifts, matched by sign-in email to the Staff directory) and **Notes**, without anyone ticking them.
+- Support workers still use the separate worker sign-up and portal below.
+
+## Notes
+
+A personal notebook for every signed-in person, in the back office (**Notes**) and in the worker portal (**Notebook**). It is built phone-first: a big + button, a full-screen note with the formatting bar above the keyboard, and notes that save themselves. Notes have bold, italic, underline, headings, bullet/numbered lists, checklists, quotes, links and pictures (phone photos are shrunk before upload), plus labels, pinning, archive and search. Typing `- `, `[ ] ` or `# ` at the start of a line works like Notion. Notes are private: not even an Admin can read someone else's. The voice notes feature is unchanged. Code: [apps/api/src/modules/notes/](apps/api/src/modules/notes/) and [apps/web/src/features/notes/](apps/web/src/features/notes/).
+
+## Signatures
+
+Send a PDF out for signature without anyone needing an account. In **Signatures**, upload the PDF, add the people who sign (a client, a worker, a family member, or yourself), and click the pages to place their boxes: signature, date, text or checkbox. Sending gives each person their own private link (`/sign/<token>`), which you copy into a message or, when SMTP is set up, have emailed. The page they open explains what to do, walks them from box to box, and works on a phone: they draw or type a signature once, agree to sign electronically, and finish.
+
+- When the last person signs, the server draws every answer onto a copy of the PDF and adds a completion certificate (who signed, when, from which network address and device, and the SHA-256 of the original). The original file is never changed. If the request is tied to a client, the signed copy is also filed in that client's documents.
+- A request is locked once sent. The sender can copy or replace a link, send a reminder, extend the deadline (30 days by default) or cancel, which stops every link at once. A signer can decline, which stops the request. Signers can download the finished copy from their own link for 30 days.
+- Access follows **Organisation files** (and **Clients**), the same as the document library. The link is the only credential, as with invoice share links, so it is rate limited, never cached or indexed, and kept out of the request log.
+- These are simple electronic signatures (a drawn or typed mark, recorded consent and an audit trail), not certificate-based digital signatures. Text printed onto the PDF uses the built-in fonts, so letters outside Latin-1 are printed without their accents; the record keeps exactly what was typed.
+
+Code: [apps/api/src/modules/signatures/](apps/api/src/modules/signatures/) (`pdf.ts` stamps and seals with `@cantoo/pdf-lib`, `signing.ts` is the public flow) and [apps/web/src/features/signatures/](apps/web/src/features/signatures/) (pages are drawn with `pdfjs-dist`, signatures captured with `signature_pad`). `vite.config.ts` publishes pdf.js's fonts and decoders at `/pdfjs/`, so signing pages load nothing from another host.
+
+## Workforce: employment, availability and leave
+
+Each team member's profile (**Staff**) records how they are employed: full-time, part-time or casual, their award classification, contracted hours and payroll ID. Pay rates are not shown there; they sit behind **Timesheets & pay**.
+
+- **Availability.** A weekly pattern (any time, set hours or not available for each day), set by the worker in the portal under Schedule → Availability, or by the office in their profile.
+- **Leave.** Workers ask from Schedule → Time off; the office decides in Staff → **Leave**, or records leave agreed in person. A plain "Unavailable" with nothing rostered on those dates needs no approval. Approving leave never changes the roster by itself: the shifts the person is still on are listed so someone can reassign them.
+- **Roster warnings.** Saving or checking a shift now also warns about time off, availability, weekend and public holiday rates, overtime, the minimum engagement and a short break since the last shift. Warnings never block saving, and never show a dollar amount.
+
+Code: [apps/api/src/modules/staff/](apps/api/src/modules/staff/) (`availability.ts`, `leave.ts`) and [apps/web/src/features/staff/](apps/web/src/features/staff/).
+
+## Timesheets and pay
+
+**Timesheets & pay** turns rostered hours into gross pay under the SCHADS Award, in three tabs.
+
+1. **Timesheets.** Every worker on every rostered shift in the pay period, against what they recorded from the portal. The office approves the hours to pay; sign-offs within the tolerance of the roster can be approved in one go. Each timesheet shows the pay lines its hours produce and the rule behind each one.
+2. **Pay runs.** Gross pay per person for a pay period, from approved timesheets and approved paid leave, with hand-entered adjustments. A draft is worked out again each time it is opened. Finalising keeps the figures and locks what the run paid, so nothing is paid twice; a finalised run can be reopened. Both a summary and a line-by-line CSV can be exported.
+3. **Pay rules.** The pay period, the classification rate table (each rate with the date it starts), the award's percentages and thresholds, public holidays, and a rate agreed with one person in place of their classification's.
+
+The award rules are one pure function, [packages/shared/logic/award.ts](packages/shared/logic/award.ts), used by the roster warnings, the timesheet breakdown and the pay run alike. It works out ordinary hours, the casual loading, Saturday, Sunday and public holiday rates, afternoon and night shift loadings, daily and weekly (or fortnightly) overtime, the minimum engagement, broken shifts, sleepovers and the per-kilometre vehicle allowance, and flags a short break between shifts.
+
+- **The percentages are the award's; the dollar amounts are yours to enter.** Hourly rates, the weekly standard rate and the per-kilometre allowance change every July and start empty. Check every value against the current Fair Work pay guide before paying anyone from these figures.
+- This is gross pay only. Tax, super and reporting to the ATO belong in payroll software; the CSV export is the hand-over.
+- The roster holds a shift within one day, so an overnight shift is entered as two shifts either side of midnight. They are paid as one shift.
+- A service can be marked **Sleepover** (Services), which pays the sleepover allowance for a shift of that service instead of an hourly rate.
+- Workers see their own hours and where each timesheet stands (Schedule → Timesheets), never amounts.
+
+Code: [apps/api/src/modules/payroll/](apps/api/src/modules/payroll/) and [apps/web/src/features/payroll/](apps/web/src/features/payroll/). Tests: `apps/api/test/award.test.ts` (the rules) and `workforce.test.ts` (the journey).
+
+## Complaints and feedback
+
+**Feedback** is the register of every complaint, compliment and suggestion. A case moves New → Acknowledged → Looking into it → Resolved → Closed, with a date to acknowledge by (two business days) and a date to resolve by (21 days) from the day it arrives. Each case has an owner, corrective actions with their own due dates, a note of what will change for good, and a timeline. A complaint cannot be resolved until its outcome is written down.
+
+- **Public form.** Turned on from the register, it gives a link (`/feedback/<token>`) anyone can open without an account, with or without giving their name. What they send lands in the register as a new case; nothing can be read back through the link, and turning the form off or replacing the link stops the old one.
+- **Reportable incidents.** An incident in **Worker reports** can be marked reportable to the NDIS Commission. The 24-hour notification and the five-business-day report are then counted from when the office became aware, shown on the incident and in the notification bell. This records what was lodged; it sends nothing to the Commission.
+
+Code: [apps/api/src/modules/feedback/](apps/api/src/modules/feedback/), [apps/api/src/modules/portal/reportable.ts](apps/api/src/modules/portal/reportable.ts) and [apps/web/src/features/feedback/](apps/web/src/features/feedback/).
+
+## Messages
+
+In-app messages for everyone who can sign in: **Messages** in the back office and the speech-bubble icon in the worker portal. No email or SMS is sent.
+
+- A conversation is only visible to the people in it; there is no admin view of other people's messages.
+- The office can write to anyone, start groups and start a thread about a shift from the roster, which goes to the workers rostered on it. A worker can write to the office and answer in any conversation they are in.
+- People who manage the team (Admins and anyone with the Staff module) can send an **announcement** to all workers, the office or everyone. It can be read but not answered, and the sender sees how many people have opened it.
+- New messages are picked up by polling every few seconds, and unread counts show on the sidebar, the bell and the portal's top bar.
+
+Code: [apps/api/src/modules/messages/](apps/api/src/modules/messages/) and [apps/web/src/features/messages/](apps/web/src/features/messages/).
+
 ## Giving a support worker access
 
 There are two ways in, and both end with an Admin deciding:
@@ -169,6 +241,7 @@ The office watches it at **Live jobs**: who is out, where they are, how far they
 - Location is only recorded between starting and finishing a shift. Nothing is tracked outside a job.
 - State-changing requests from other origins are rejected; every request is validated with the shared Zod schemas.
 - Uploads are limited by size and count and checked by their real content (magic bytes), stored under random names and never served statically.
+- Invoice share links and signing links are long random tokens. Whoever holds one can open that one invoice, or sign as that one signer, and nothing else; revoking, replacing or cancelling stops it at once.
 - Every change is written to the audit log (Settings → Privacy & access). Clinical and financial records are archived, returned or voided rather than deleted.
 
 ## End-to-end check

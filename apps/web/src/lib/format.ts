@@ -16,19 +16,30 @@ export function statusClass(status: string): string {
     case "Confirmed":
     case "Ready":
     case "Draft ready":
+    case "Resolved":
       return "badge-approved";
     case "Invoiced":
     case "Completed":
+    case "In pay run":
+    case "Finalised":
+    case "Closed":
       return "badge-invoiced";
     case "Submitted":
     case "Sent":
     case "Ready to send":
     case "Planned":
     case "Processing":
+    case "Pending":
+    case "Awaiting approval":
+    case "In progress":
+    case "New":
+    case "Acknowledged":
       return "badge-submitted";
     case "Returned":
     case "On leave":
     case "Low balance":
+    case "No sign-on":
+    case "Investigating":
       return "badge-returned";
     case "Void":
     case "Cancelled":
@@ -36,6 +47,7 @@ export function statusClass(status: string): string {
     case "Plan expired":
     case "Failed":
     case "Unavailable":
+    case "Declined":
       return "badge-danger";
     default:
       return "badge-draft";

@@ -121,6 +121,14 @@ button:disabled {
   background: rgba(255, 255, 255, 0.08);
   color: white;
 }
+/* A scrollbar that stays out of the way on the dark sidebar. */
+.sidebar-nav {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+.sidebar-nav .nav-link {
+  flex: none;
+}
 .nav-link.active {
   background: #244755;
   color: #fff;
@@ -1525,7 +1533,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 56px;
+  min-width: 50px;
   padding: 5px 4px;
   border-radius: 9px;
   color: #78878c;

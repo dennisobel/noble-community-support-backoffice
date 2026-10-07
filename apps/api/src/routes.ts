@@ -1,15 +1,20 @@
 import { Router } from "express";
-import { authenticate, requireRole } from "./middleware/auth";
+import { enforceModuleAccess } from "./middleware/access";
+import { authenticate, requireOffice, requireRole } from "./middleware/auth";
 import { noStore, originCheck } from "./middleware/security";
 import { activityRouter } from "./modules/activity/service";
 import { authRouter } from "./modules/auth/routes";
 import { budgetsRouter } from "./modules/budgets/routes";
 import { dashboardRouter } from "./modules/dashboard/service";
 import { documentsRouter } from "./modules/documents/routes";
+import { feedbackRouter, publicFeedbackRouter } from "./modules/feedback/routes";
 import { invoicesRouter } from "./modules/invoices/routes";
 import { publicInvoicesRouter } from "./modules/invoices/public";
+import { publicSigningRouter } from "./modules/signatures/public";
+import { signaturesRouter } from "./modules/signatures/routes";
 import { notificationsRouter } from "./modules/notifications/service";
 import { participantsRouter } from "./modules/participants/routes";
+import { payrollRouter } from "./modules/payroll/routes";
 import {
   getAbcAdmin,
   getIncidentAdmin,
@@ -18,6 +23,7 @@ import {
   listLogbookAdmin,
   getLogbookAdminEntry,
   setAbcStatus,
+  setIncidentReportable,
   setIncidentStatus,
 } from "./modules/portal/reports";
 import { trackingRouter } from "./modules/tracking/routes";
@@ -30,6 +36,10 @@ import { servicesRouter } from "./modules/services/routes";
 import { settingsRouter } from "./modules/settings/routes";
 import { staffRouter } from "./modules/staff/routes";
 import { getMeta, healthRouter } from "./modules/system/routes";
+import { meRouter } from "./modules/me/service";
+import { messagesRouter } from "./modules/messages/routes";
+import { notesRouter } from "./modules/notes/routes";
+import { usersRouter } from "./modules/users/routes";
 import { voiceRouter } from "./modules/voice/routes";
 import { xeroCallback, xeroRouter } from "./modules/xero/routes";
 
@@ -46,12 +56,20 @@ export function apiRouter(): Router {
   router.use("/auth", authRouter());
   /* Share links: no session, the token in the URL is the only credential. */
   router.use("/public", publicInvoicesRouter());
+  /* Signing links work the same way: one signer, one private token, no session. */
+  router.use("/public", publicSigningRouter());
+  /* The feedback form the office publishes: anyone holding its link can send, nobody can read. */
+  router.use("/public", publicFeedbackRouter());
+  /* Personal notes: any signed-in role (office users and support workers), each person's own only. */
+  router.use("/notes", authenticate, notesRouter());
+  /* Messages: any signed-in role too, each person only the conversations they are in. */
+  router.use("/messages", authenticate, messagesRouter());
   /* Xero sends the browser back here after sign-in: no session, the one-time state in the URL is the credential. */
   router.get("/integrations/xero/callback", xeroCallback);
 
   /*
    * Worker portal, mounted before the back office. The Admin router below is mounted at the
-   * root, so its requireRole("admin") would otherwise reject portal requests before they
+   * root, so its office-only guard would otherwise reject portal requests before they
    * ever reached this router.
    */
   const portal = Router();
@@ -60,14 +78,20 @@ export function apiRouter(): Router {
   router.use("/portal", portal);
 
   const secured = Router();
-  secured.use(authenticate, requireRole("admin"));
+  // Admins and approved office users; the access table decides what each may call (default: Admin only).
+  secured.use(authenticate, requireOffice, enforceModuleAccess);
+  secured.use("/users", usersRouter());
+  secured.use("/me", meRouter());
   secured.use("/settings", settingsRouter());
   secured.use("/staff", staffRouter());
+  secured.use("/payroll", payrollRouter());
+  secured.use("/feedback", feedbackRouter());
   secured.use("/services", servicesRouter());
   secured.use("/participants", participantsRouter());
   secured.use("/service-records", recordsRouter());
   secured.use("/roster", rosterRouter());
   secured.use("/invoices", invoicesRouter());
+  secured.use("/signatures", signaturesRouter());
   secured.use("/integrations/xero", xeroRouter());
   secured.use("/voice-notes", voiceRouter());
   secured.use("/activity", activityRouter());
@@ -86,6 +110,7 @@ export function apiRouter(): Router {
 
 import { ctx, parse } from "./lib/http";
 import { objectIdParam } from "./lib/mappers";
+import { incidentReportableSchema } from "@shared/schemas/feedback";
 import { reportStatusSchema } from "@shared/schemas/staff-portal";
 
 /** Admin read/review endpoints for worker-submitted incidents, ABC reports and logbooks. */
@@ -107,6 +132,15 @@ function reportReviewRouter(): Router {
         parse(reportStatusSchema, req.body),
         ctx(req),
         true
+      )
+    );
+  });
+  router.post("/incidents/:id/reportable", async (req, res) => {
+    res.json(
+      await setIncidentReportable(
+        objectIdParam(req, "id", "Incident report"),
+        parse(incidentReportableSchema, req.body),
+        ctx(req)
       )
     );
   });

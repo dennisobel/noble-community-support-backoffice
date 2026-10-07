@@ -21,6 +21,11 @@ import {
   portalShiftQuery,
 } from "@shared/schemas/staff-portal";
 import { revOnly } from "@shared/schemas/common";
+import { payPeriodQuery } from "@shared/schemas/payroll";
+import {
+  availabilitySchema,
+  leaveCreateSchema,
+} from "@shared/schemas/workforce";
 import { ctx, parse, requireAuth } from "../../lib/http";
 import { codeParam, objectIdParam } from "../../lib/mappers";
 import { sendStoredFile } from "../../lib/send-file";
@@ -71,6 +76,9 @@ import {
   updatePortalNote,
 } from "./notes";
 import { getPortalShift, listPortalShifts, updateTimesheet } from "./shifts";
+import { listOwnTimesheets } from "../payroll/timesheets";
+import { getAvailability, setAvailability } from "../staff/availability";
+import { cancelLeave, listOwnLeave, requestLeave } from "../staff/leave";
 
 /** The signed-in worker's team member id (the portal is staff-only). */
 function me(req: Request): string {
@@ -108,6 +116,48 @@ export function portalRouter(): Router {
         kilometres: input.kilometres,
         notes: input.notes,
       })
+    );
+  });
+
+  /* When they can work, the time off they have asked for, and how their hours stand. */
+  router.get("/availability", async (req, res) => {
+    res.json(await getAvailability(me(req)));
+  });
+  router.put("/availability", async (req, res) => {
+    res.json(
+      await setAvailability(
+        me(req),
+        parse(availabilitySchema, req.body),
+        ctx(req)
+      )
+    );
+  });
+  router.get("/leave", async (req, res) => {
+    res.json(await listOwnLeave(me(req)));
+  });
+  router.post("/leave", async (req, res) => {
+    res
+      .status(201)
+      .json(
+        await requestLeave(
+          me(req),
+          parse(leaveCreateSchema, req.body),
+          ctx(req)
+        )
+      );
+  });
+  router.post("/leave/:id/cancel", async (req, res) => {
+    res.json(
+      await cancelLeave(
+        objectIdParam(req, "id", "Leave request"),
+        ctx(req),
+        me(req)
+      )
+    );
+  });
+  router.get("/timesheets", async (req, res) => {
+    res.json(
+      await listOwnTimesheets(me(req), parse(payPeriodQuery, req.query).date)
     );
   });
 

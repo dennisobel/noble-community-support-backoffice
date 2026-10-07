@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { errors as joseErrors, jwtVerify, SignJWT } from "jose";
-import type { UserRole } from "@shared/enums";
+import { USER_ROLES, type UserRole } from "@shared/enums";
 import { config } from "../../config";
 import { errors } from "../../lib/errors";
 
@@ -44,7 +44,8 @@ export async function verifyAccessToken(token: string): Promise<AccessClaims> {
     return {
       sub: payload.sub,
       sid: payload.sid,
-      role: payload.role === "staff" ? "staff" : "admin",
+      // Informational only (the database decides access); an unknown value never reads as Admin.
+      role: USER_ROLES.find(role => role === payload.role) ?? "staff",
       tv: payload.tv,
     };
   } catch (error) {

@@ -47,7 +47,7 @@ export function objectIdParam(
 /** Validates a business-code route parameter such as SR-1048 (404 for anything else). */
 export function codeParam(
   req: Request,
-  prefix: "SR" | "SH" | "VN" | "INV",
+  prefix: "SR" | "SH" | "VN" | "INV" | "PR" | "FB",
   what: string,
   name = "id"
 ): string {

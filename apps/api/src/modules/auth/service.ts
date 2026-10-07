@@ -8,6 +8,7 @@ import type {
   SessionDTO,
   UserDTO,
 } from "@shared/dto";
+import { effectiveModules } from "@shared/access";
 import { todayIn } from "@shared/logic/time";
 import { MESSAGES } from "@shared/messages";
 import type {
@@ -18,6 +19,7 @@ import type {
   signupSchema,
   updateMeSchema,
 } from "@shared/schemas/auth";
+import type { registerSchema } from "@shared/schemas/access";
 import type { staffApplicationSchema } from "@shared/schemas/staff-portal";
 import { config } from "../../config";
 import { logActivity } from "../../lib/audit";
@@ -175,7 +177,14 @@ async function revokeSessions(
 export function toUserDTO(
   user: Pick<
     UserDoc,
-    "_id" | "name" | "email" | "role" | "lastLoginAt" | "createdAt" | "staffId"
+    | "_id"
+    | "name"
+    | "email"
+    | "role"
+    | "modules"
+    | "lastLoginAt"
+    | "createdAt"
+    | "staffId"
   >
 ): UserDTO {
   return {
@@ -183,6 +192,7 @@ export function toUserDTO(
     name: user.name,
     email: user.email,
     role: user.role,
+    modules: effectiveModules(user.role, user.modules),
     staffId: user.staffId ? String(user.staffId) : null,
     lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
     createdAt: user.createdAt.toISOString(),
@@ -288,6 +298,66 @@ export async function signup(
   return sessionDTO(user);
 }
 
+/* ───────────── Asking for access ───────────── */
+
+/**
+ * Anyone who is not the first Admin asks for access here. The account exists straight away,
+ * so they choose their own password, but it cannot sign in until an Admin approves it and
+ * decides which role and modules it gets.
+ */
+export async function register(
+  input: z.output<typeof registerSchema>,
+  req: Request
+): Promise<{ status: "Pending"; message: string }> {
+  assertPasswordStrength(input.password);
+  if ((await bootstrapStatus()).setupRequired)
+    throw errors.badRequest(
+      "This workspace has not been set up yet. Create the Admin account first."
+    );
+  const taken = (status?: UserDoc["status"]) =>
+    errors.conflict(
+      "EMAIL_DUPLICATE",
+      status === "pending"
+        ? "You have already asked for access. An Admin will review it soon."
+        : "This email already has an account. Sign in, or use “Forgot password” if you need a new password."
+    );
+  const existing = await User.findOne({ email: input.email })
+    .select("status")
+    .lean<Pick<UserDoc, "status">>();
+  if (existing) throw taken(existing.status);
+  const passwordHash = await hashPassword(input.password);
+  let user: UserDoc;
+  try {
+    const created = await User.create({
+      name: input.name,
+      email: input.email,
+      passwordHash,
+      // Placeholders: the Admin chooses the real role and modules when approving.
+      role: "coordinator",
+      modules: [],
+      status: "pending",
+      request: { message: input.message ?? "" },
+    });
+    user = created.toObject<UserDoc>();
+  } catch (error) {
+    if (isDuplicateKey(error)) throw taken();
+    throw error;
+  }
+  await logActivity({
+    actor: null,
+    action: "user.requested_access",
+    entityType: "user",
+    entityId: String(user._id),
+    summary: `${input.name} asked for access`,
+    ip: clientIp(req),
+  });
+  return {
+    status: "Pending",
+    message:
+      "Thanks, your request is with an Admin. You can sign in as soon as they approve it.",
+  };
+}
+
 /* ───────────── Sign in / out ───────────── */
 
 export async function login(
@@ -297,6 +367,16 @@ export async function login(
 ): Promise<SessionDTO> {
   const auth = config().auth;
   const user = await User.findOne({ email: input.email }).lean<UserDoc>();
+  if (user && (user.status === "pending" || user.status === "rejected")) {
+    // Only someone who knows the password learns where their request stands.
+    if (!(await verifyPassword(user.passwordHash, input.password)))
+      throw errors.invalidCredentials();
+    throw errors.forbidden(
+      user.status === "pending"
+        ? "Your access request is waiting for an Admin to approve it. You can sign in as soon as it is."
+        : "Your access request was declined. Ask the person who runs your workspace if you think that is a mistake."
+    );
+  }
   if (!user || user.status !== "active") {
     await verifyPassword(null, input.password);
     throw errors.invalidCredentials();
@@ -722,10 +802,13 @@ export async function inviteStaffAccount(
     const existing = await User.findOne({ email: staff.email })
       .select("_id role")
       .lean<Pick<UserDoc, "_id" | "role">>();
-    if (existing && existing.role === "admin")
+    // Any office account (Admin, Manager, ...) must never be turned into a worker login by an invite.
+    if (existing && existing.role !== "staff")
       throw errors.conflict(
         "STAFF_ACCOUNT_EXISTS",
-        `${staff.email} already belongs to the workspace Admin account.`
+        existing.role === "admin"
+          ? `${staff.email} already belongs to the workspace Admin account.`
+          : `${staff.email} already belongs to an office account.`
       );
     if (existing) userId = String(existing._id);
   }

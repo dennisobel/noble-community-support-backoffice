@@ -1,13 +1,17 @@
 import { model, Schema, type Types } from "mongoose";
 import {
+  ACCESS_MODULES,
   DETAIL_LEVELS,
   NOTE_TEMPLATES,
   USER_ROLES,
+  USER_STATUSES,
+  type AccessModule,
   type DetailLevel,
   type NoteTemplate,
   type UserRole,
+  type UserStatus,
 } from "@shared/enums";
-import { baseOptions } from "./common";
+import { actorSchema, baseOptions, type ActorRefSub } from "./common";
 
 export interface UserDoc {
   _id: Types.ObjectId;
@@ -15,6 +19,8 @@ export interface UserDoc {
   email: string;
   passwordHash: string;
   role: UserRole;
+  /** The parts of the back office an office user may open. Admins ignore this: they can open all of it. */
+  modules: AccessModule[];
   /** Set for worker accounts so the portal can resolve the team member record. */
   staffId: Types.ObjectId | null;
   /** Where an invited worker is in the "set your password" journey. */
@@ -22,7 +28,14 @@ export interface UserDoc {
     sentAt: Date | null;
     acceptedAt: Date | null;
   };
-  status: "active" | "disabled";
+  status: UserStatus;
+  /** A self-service sign-up waits for an Admin: what they said, and how the Admin answered. */
+  request: {
+    message: string;
+    reviewedAt: Date | null;
+    reviewedBy: ActorRefSub | null;
+    note: string;
+  };
   failedLogins: number;
   lockedUntil: Date | null;
   lastLoginAt: Date | null;
@@ -61,12 +74,19 @@ const userSchema = new Schema<UserDoc>(
     },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: USER_ROLES, default: "admin" },
+    modules: { type: [{ type: String, enum: ACCESS_MODULES }], default: [] },
     staffId: { type: Schema.Types.ObjectId, ref: "Staff", default: null },
     invitation: {
       sentAt: { type: Date, default: null },
       acceptedAt: { type: Date, default: null },
     },
-    status: { type: String, enum: ["active", "disabled"], default: "active" },
+    status: { type: String, enum: USER_STATUSES, default: "active" },
+    request: {
+      message: { type: String, default: "" },
+      reviewedAt: { type: Date, default: null },
+      reviewedBy: { type: actorSchema, default: null },
+      note: { type: String, default: "" },
+    },
     failedLogins: { type: Number, default: 0 },
     lockedUntil: { type: Date, default: null },
     lastLoginAt: { type: Date, default: null },

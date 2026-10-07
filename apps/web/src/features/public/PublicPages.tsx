@@ -294,7 +294,12 @@ export function LoginPage() {
         </div>
       ) : (
         <div className="public-auth-switch">
-          Work here but have no login yet?{" "}
+          Office team and no login yet?{" "}
+          <Link href="/signup" className="public-inline-link">
+            Request access
+          </Link>
+          <br />
+          Support worker?{" "}
           <Link href="/staff-signup" className="public-inline-link">
             Request portal access
           </Link>
@@ -304,6 +309,161 @@ export function LoginPage() {
         Sessions use secure, http-only cookies. Five failed attempts lock the
         account for 15 minutes.
       </p>
+    </AuthLayout>
+  );
+}
+
+/**
+ * Everyone after the first Admin asks for access here. They choose their own password, but the
+ * account cannot sign in until an Admin approves it and decides the role and modules it gets.
+ */
+function RequestAccessForm() {
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirm: "",
+    message: "",
+  });
+  const [show, setShow] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState("");
+  const set = (key: keyof typeof form) => (value: string) =>
+    setForm(current => ({ ...current, [key]: value }));
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (form.password.length < MIN_PASSWORD_LENGTH)
+      return setNotice(MESSAGES.password(MIN_PASSWORD_LENGTH));
+    if (form.password !== form.confirm)
+      return setNotice(MESSAGES.passwordMismatch);
+    setBusy(true);
+    setNotice("");
+    try {
+      const result = await api.post<{ message: string }>("/auth/register", {
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        message: form.message.trim() || undefined,
+      });
+      setSent(result.message);
+    } catch (error) {
+      setNotice(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (sent)
+    return (
+      <AuthLayout eyebrow="REQUEST SENT" title="You're on the list." intro={sent}>
+        <Link href="/login" className="public-primary-button mt-6 w-full">
+          Back to sign in <ArrowRight size={15} />
+        </Link>
+      </AuthLayout>
+    );
+
+  return (
+    <AuthLayout
+      eyebrow="REQUEST ACCESS"
+      title="Ask for access."
+      intro="Create your login. An Admin approves it and chooses what you can open."
+    >
+      <div className="public-prototype-note mt-5">
+        <ShieldCheck size={16} />
+        <span>
+          <b>Nothing is open until you are approved</b>
+          <small>
+            You can sign in as soon as an Admin has approved the request.
+            Support workers should use{" "}
+            <Link href="/staff-signup" className="public-inline-link">
+              worker sign-up
+            </Link>{" "}
+            instead.
+          </small>
+        </span>
+      </div>
+      <form className="mt-6 space-y-4" onSubmit={submit}>
+        <label className="public-label">
+          Full name
+          <div className="public-input-wrap">
+            <CircleUserRound size={15} />
+            <input
+              required
+              autoComplete="name"
+              placeholder="Your name"
+              value={form.name}
+              onChange={event => set("name")(event.target.value)}
+            />
+          </div>
+        </label>
+        <label className="public-label">
+          Work email
+          <div className="public-input-wrap">
+            <Mail size={15} />
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              placeholder="name@organisation.org.au"
+              value={form.email}
+              onChange={event => set("email")(event.target.value)}
+            />
+          </div>
+        </label>
+        <label className="public-label">
+          Password
+          <PasswordInput
+            value={form.password}
+            onChange={set("password")}
+            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+            autoComplete="new-password"
+            show={show}
+            onToggle={() => setShow(value => !value)}
+          />
+        </label>
+        <label className="public-label">
+          Confirm password
+          <PasswordInput
+            value={form.confirm}
+            onChange={set("confirm")}
+            placeholder="Enter password again"
+            autoComplete="new-password"
+            show={show}
+          />
+        </label>
+        <label className="public-label">
+          What will you use Noble for? (optional)
+          <textarea
+            className="public-textarea"
+            rows={2}
+            maxLength={500}
+            placeholder="Your role, and what you need to see or do."
+            value={form.message}
+            onChange={event => set("message")(event.target.value)}
+          />
+        </label>
+        {notice && (
+          <div className="public-form-notice" role="status">
+            {notice}
+          </div>
+        )}
+        <button
+          type="submit"
+          className="public-primary-button w-full"
+          disabled={busy}
+        >
+          {busy ? "Sending…" : "Request access"}
+          <ArrowRight size={15} />
+        </button>
+      </form>
+      <div className="public-auth-switch">
+        Already approved?{" "}
+        <Link href="/login" className="public-inline-link">
+          Sign in
+        </Link>
+      </div>
     </AuthLayout>
   );
 }
@@ -354,19 +514,8 @@ export function SignupPage() {
     }
   };
 
-  if (bootstrap.data && !setupRequired) {
-    return (
-      <AuthLayout
-        eyebrow="WORKSPACE READY"
-        title="Already set up."
-        intro="This workspace already has its Admin account, so sign-up is closed."
-      >
-        <Link href="/login" className="public-primary-button mt-6 w-full">
-          Sign in <ArrowRight size={15} />
-        </Link>
-      </AuthLayout>
-    );
-  }
+  // The workspace already has its Admin: everyone else asks for access instead.
+  if (bootstrap.data && !setupRequired) return <RequestAccessForm />;
 
   return (
     <AuthLayout
@@ -379,8 +528,8 @@ export function SignupPage() {
         <span>
           <b>One-time setup</b>
           <small>
-            This creates the only Admin account. Once it exists, public sign-up
-            closes permanently.
+            This creates the first Admin account. After that, everyone else
+            asks for access from this page and you approve them in Settings.
           </small>
         </span>
       </div>

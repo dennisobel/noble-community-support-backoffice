@@ -180,8 +180,13 @@ export async function updateTimesheet(
   const current = shift.timesheets?.find(
     row => String(row.staffId) === staffId
   );
+  if (current?.approved)
+    throw errors.invalidState(
+      "The office has approved the hours for this shift. Ask them if something needs changing."
+    );
   const staffObjectId = shift.staffIds.find(id => String(id) === staffId)!;
   const next = {
+    ...current,
     staffId: staffObjectId,
     startedAt: current?.startedAt ?? null,
     endedAt: current?.endedAt ?? null,
