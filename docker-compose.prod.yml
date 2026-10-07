@@ -6,6 +6,10 @@
 # Only the web container publishes ports, and they default to 9080/9443 — chosen because the
 # shared VM already uses 80, 3000-3005, 4000-4030, 5000-5173, 5432, 5434, 6379, 7100-7110 and
 # 8001-8501. MongoDB and the API are reachable only on the internal network.
+#
+# The VM's Traefik (host network, ports 80/443) reads the labels on web and api: it serves
+# https://nobleconnect.site from the web container and https://api.nobleconnect.site from the API,
+# and gets their certificates. Without Traefik the labels do nothing.
 name: noble-prod
 
 services:
@@ -66,6 +70,14 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.noble-prod-api.rule=Host(`api.nobleconnect.site`)"
+      - "traefik.http.routers.noble-prod-api.entrypoints=websecure"
+      - "traefik.http.routers.noble-prod-api.tls=true"
+      - "traefik.http.routers.noble-prod-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.noble-prod-api.service=noble-prod-api"
+      - "traefik.http.services.noble-prod-api.loadbalancer.server.port=4100"
     restart: unless-stopped
 
   web:
@@ -85,6 +97,14 @@ services:
       - caddy_config:/config
     depends_on:
       - api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.noble-prod-web.rule=Host(`nobleconnect.site`)"
+      - "traefik.http.routers.noble-prod-web.entrypoints=websecure"
+      - "traefik.http.routers.noble-prod-web.tls=true"
+      - "traefik.http.routers.noble-prod-web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.noble-prod-web.service=noble-prod-web"
+      - "traefik.http.services.noble-prod-web.loadbalancer.server.port=80"
     restart: unless-stopped
 
   backup:
