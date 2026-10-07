@@ -48,10 +48,54 @@ type RequestConfig = AxiosRequestConfig & {
   skipAuthRefresh?: boolean;
 };
 
+const isAddress = (host: string) => /^[\d.]+$/.test(host) || host.includes(":");
+
+/**
+ * Whether two hosts belong to one site (example.com, api.example.com, www.example.com), which is
+ * as far as the session cookies travel.
+ */
+function sameSite(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (isAddress(a) || isAddress(b)) return false;
+  if (a.endsWith(`.${b}`) || b.endsWith(`.${a}`)) return true;
+  const parent = (host: string) => host.slice(host.indexOf(".") + 1);
+  return parent(a) === parent(b) && parent(a).includes(".");
+}
+
+/**
+ * Where the API is. By default the page's own address (`/api/v1`, which Caddy proxies in production
+ * and Vite in development). VITE_API_BASE_URL can name another host, such as https://api.example.com
+ * for a site on https://example.com. That host is only used when the page is on the same site as it,
+ * because the session cookies go no further: opened from anywhere else (the server's bare IP address,
+ * say) the app keeps to its own address, which still proxies /api.
+ */
+function resolveApiBase(): string {
+  const configured = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
+  if (!configured) return API_PREFIX;
+  if (!/^https?:\/\//i.test(configured))
+    return configured.replace(/\/+$/, "") || API_PREFIX;
+  try {
+    const target = new URL(configured);
+    const here = window.location;
+    if (
+      target.protocol !== here.protocol ||
+      !sameSite(target.hostname, here.hostname)
+    )
+      return API_PREFIX;
+    return `${target.origin}${target.pathname.replace(/\/+$/, "") || API_PREFIX}`;
+  } catch {
+    return API_PREFIX;
+  }
+}
+
+/** The start of every API address. Links that leave the page (a PDF to download) are built from it too. */
+export const API_BASE = resolveApiBase();
+
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || API_PREFIX,
+  baseURL: API_BASE,
   withCredentials: true,
-  headers: { "X-Requested-With": "XMLHttpRequest" },
+  // No custom headers on purpose: with the API on another host each one would cost every
+  // request an extra round trip, because the browser has to ask permission first.
 });
 
 const NO_REFRESH = [

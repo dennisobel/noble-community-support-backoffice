@@ -23,6 +23,38 @@ export function originCheck(
   next();
 }
 
+const CORS_METHODS = "GET, POST, PUT, PATCH, DELETE";
+/** Response headers the web app reads: the file name of a download and the id of a failed request. */
+const CORS_EXPOSED = "Content-Disposition, X-Request-Id";
+
+/**
+ * Lets the web app call the API from another address in the allowlist, for when the site is on
+ * example.com and the API on api.example.com. A deployment on one address never needs it. Only an
+ * allowlisted origin is ever named, never a wildcard, because these requests carry the session cookies.
+ */
+export function cors(req: Request, res: Response, next: NextFunction): void {
+  // The answer depends on who is asking, so a cache must not hand it to someone else.
+  res.vary("Origin");
+  const origin = req.get("origin");
+  if (!origin || !config().allowedOrigins.has(origin)) return next();
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Expose-Headers", CORS_EXPOSED);
+  // The browser asks first before a request with a JSON body or a method other than GET and POST.
+  if (req.method === "OPTIONS" && req.get("access-control-request-method")) {
+    res.vary("Access-Control-Request-Headers");
+    res.setHeader("Access-Control-Allow-Methods", CORS_METHODS);
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      req.get("access-control-request-headers") ?? "Content-Type"
+    );
+    res.setHeader("Access-Control-Max-Age", "7200");
+    res.status(204).end();
+    return;
+  }
+  next();
+}
+
 /** Rate limiter that answers with the standard error envelope. Disabled when RATE_LIMIT_ENABLED=false. */
 export function limiter(options: {
   windowMs: number;

@@ -94,7 +94,9 @@ All settings are environment variables; see [.env.example](.env.example) for the
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `JWT_ACCESS_SECRET`   | Required in production (32+ random characters)                                                                                     |
 | `SETUP_CODE`          | Required in production: the code needed to create the first Admin                                                                  |
-| `APP_URL`             | Public URL of the web app (emails and the cross-site request check)                                                                |
+| `APP_URL`             | Public URL of the web app (emails, the links it hands out and the cross-site request check)                                        |
+| `ALLOWED_ORIGINS`     | Other addresses the web app is also opened from, comma-separated. A browser may only call the API from `APP_URL` and these         |
+| `VITE_API_BASE_URL`   | Where the web app calls the API when it has its own host. Empty (the default) means the site's own address                         |
 | `MONGO_URI`           | MongoDB connection string (must be a replica set)                                                                                  |
 | `SMTP_*`, `MAIL_FROM` | Email for password resets and invoices                                                                                             |
 | `STT_PROVIDER`        | `mock` (default) or `openai` — any OpenAI-compatible `/audio/transcriptions` endpoint, cloud or self-hosted                        |
@@ -119,6 +121,18 @@ Only the `web` container publishes anything; the API and MongoDB are reachable s
 `SITE_ADDRESS` defaults to `:80`, meaning Caddy serves plain HTTP inside the container and you reach it on 9080. Put your own TLS terminator in front, or — once the host's port 80 and 443 are free — set `SITE_ADDRESS` to your domain and `HTTP_PORT=80 HTTPS_PORT=443`, and Caddy will obtain a certificate itself.
 
 To run the development stack on the same VM, override the host ports too, as the defaults collide: `API_HOST_PORT=9101 MONGO_HOST_PORT=9017 MAILPIT_UI_PORT=9025 MAILPIT_SMTP_PORT=9125`.
+
+### On a domain, behind Traefik
+
+The shared VM's ports 80 and 443 belong to Traefik, which reads the labels on `web` and `api` in [docker-compose.prod.yml](docker-compose.prod.yml): it serves `https://nobleconnect.site` from the web container and `https://api.nobleconnect.site` from the API, and gets both certificates. Three settings in `.env.production` go with it:
+
+```bash
+APP_URL=https://nobleconnect.site                 # links the app hands out, and the address allowed to call the API
+ALLOWED_ORIGINS=http://<host>:9080                # keeps the old address working beside the domain
+VITE_API_BASE_URL=https://api.nobleconnect.site   # baked into the web app, so changing it needs --build
+```
+
+Opened on the domain, the web app calls the API on its own host; the API answers only the addresses above. Opened on `http://<host>:9080` it keeps using `/api` on that address, because the session cookies do not travel between an IP address and a domain. Leave `VITE_API_BASE_URL` empty to keep everything on one address.
 
 ### The services
 
@@ -239,7 +253,7 @@ The office watches it at **Live jobs**: who is out, where they are, how far they
 - Sessions use http-only, `SameSite=Lax` cookies: a 15-minute access token and a rotating refresh token (stored hashed; reuse revokes the session). Five failed sign-ins lock the account for 15 minutes.
 - Admins and support workers are separate roles with separate apps. `/app` is Admin-only and `/portal` is worker-only; a worker's queries are always scoped to their own id, so one worker cannot read another's shifts, notes or documents.
 - Location is only recorded between starting and finishing a shift. Nothing is tracked outside a job.
-- State-changing requests from other origins are rejected; every request is validated with the shared Zod schemas.
+- State-changing requests from other origins are rejected, and only the addresses in `APP_URL` and `ALLOWED_ORIGINS` are allowed to read the API from a browser; every request is validated with the shared Zod schemas.
 - Uploads are limited by size and count and checked by their real content (magic bytes), stored under random names and never served statically.
 - Invoice share links and signing links are long random tokens. Whoever holds one can open that one invoice, or sign as that one signer, and nothing else; revoking, replacing or cancelling stops it at once.
 - Every change is written to the audit log (Settings → Privacy & access). Clinical and financial records are archived, returned or voided rather than deleted.

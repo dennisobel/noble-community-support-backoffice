@@ -1,6 +1,6 @@
 import { AlertCircle, Download, Printer } from "lucide-react";
 import { useParams } from "wouter";
-import { API_PREFIX } from "@shared/const";
+import { API_BASE } from "@/api/client";
 import { usePublicInvoice } from "@/api/hooks";
 import { Spinner } from "@/components/app/ui";
 import { money, prettyDate } from "@/lib/format";
@@ -33,7 +33,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 export default function PublicInvoicePage() {
   const { token } = useParams<{ token: string }>();
   const invoice = usePublicInvoice(token);
-  const pdf = `${API_PREFIX}/public/invoices/${token}/pdf`;
+  const pdf = `${API_BASE}/public/invoices/${token}/pdf`;
 
   if (invoice.isPending)
     return (

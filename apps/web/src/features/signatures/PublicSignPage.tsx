@@ -11,13 +11,12 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
-import { API_PREFIX } from "@shared/const";
 import type {
   PublicSigningDTO,
   PublicSigningFieldDTO,
   PublicSigningResultDTO,
 } from "@shared/dto";
-import { errorMessage } from "@/api/client";
+import { API_BASE, errorMessage } from "@/api/client";
 import {
   useDeclineSigning,
   usePublicSigning,
@@ -132,7 +131,7 @@ export function ClosedView({
   data: PublicSigningDTO;
   token: string;
 }) {
-  const pdf = `${API_PREFIX}/public/sign/${token}/pdf`;
+  const pdf = `${API_BASE}/public/sign/${token}/pdf`;
   const waiting = data.others
     .filter(other => other.status !== "signed")
     .map(other => other.name);
@@ -432,7 +431,7 @@ export function SigningView({
             <ArrowDown size={14} /> Go to the first box
           </Btn>
           <a
-            href={`${API_PREFIX}/public/sign/${token}/pdf?download=1`}
+            href={`${API_BASE}/public/sign/${token}/pdf?download=1`}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#cfdcd7] bg-white px-3 text-[12px] font-semibold text-[#2b4a50] no-underline"
           >
             <Download size={14} /> Save a copy to read

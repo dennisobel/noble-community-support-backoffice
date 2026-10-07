@@ -87,6 +87,9 @@ services:
       args:
         # Baked into the bundle at build time. The Mapbox token is a public pk.… token.
         VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-}
+        # Where the web app calls the API when it has its own host (https://api.nobleconnect.site).
+        # Empty means the site's own address, with Caddy proxying /api.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:

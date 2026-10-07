@@ -204,6 +204,45 @@ describe("first run and authentication", () => {
     expect(response.status).toBe(403);
     expect(response.body.error.code).toBe("FORBIDDEN");
   });
+
+  it("answers the web app from an allowed address when the API is on its own host, and nobody else", async () => {
+    const site = "http://localhost:3000";
+    // What the browser asks before a request with a JSON body
+    const ask = await request(app)
+      .options(`${API}/auth/login`)
+      .set("Origin", site)
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "content-type");
+    expect(ask.status).toBe(204);
+    expect(ask.headers["access-control-allow-origin"]).toBe(site);
+    expect(ask.headers["access-control-allow-credentials"]).toBe("true");
+    expect(ask.headers["access-control-allow-methods"]).toContain("PATCH");
+    expect(ask.headers["access-control-allow-headers"]).toBe("content-type");
+    expect(Number(ask.headers["access-control-max-age"])).toBeGreaterThan(0);
+
+    // The request itself: readable by the site, cookies and all, including an error
+    const read = await request(app).get(`${API}/auth/me`).set("Origin", site);
+    expect(read.status).toBe(401);
+    expect(read.headers["access-control-allow-origin"]).toBe(site);
+    expect(read.headers["access-control-allow-credentials"]).toBe("true");
+    expect(read.headers["access-control-expose-headers"]).toContain(
+      "Content-Disposition"
+    );
+    expect(read.headers.vary).toContain("Origin");
+
+    // Any other site is told nothing, so its pages can neither read nor get permission
+    const stranger = await request(app)
+      .get(`${API}/health`)
+      .set("Origin", "https://evil.example");
+    expect(stranger.status).toBe(200);
+    expect(stranger.headers["access-control-allow-origin"]).toBeUndefined();
+    const refused = await request(app)
+      .options(`${API}/auth/login`)
+      .set("Origin", "https://evil.example")
+      .set("Access-Control-Request-Method", "POST");
+    expect(refused.headers["access-control-allow-origin"]).toBeUndefined();
+    expect(refused.headers["access-control-allow-methods"]).toBeUndefined();
+  });
 });
 
 async function winnerEmail(): Promise<string> {

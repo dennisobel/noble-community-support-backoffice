@@ -8,6 +8,7 @@ import { API_PREFIX } from "@shared/const";
 import { config } from "./config";
 import { logger } from "./lib/logger";
 import { apiNotFound, errorHandler } from "./middleware/errors";
+import { cors } from "./middleware/security";
 import { apiRouter } from "./routes";
 
 const LINK_TOKEN = new RegExp("/public/([a-z]+)/[A-Za-z0-9_-]{24,64}");
@@ -72,6 +73,8 @@ export function createApp(): Express {
       },
     })
   );
+  // Before the body is read, so the browser's pre-request check is answered without any other work.
+  app.use(API_PREFIX, cors);
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
 
