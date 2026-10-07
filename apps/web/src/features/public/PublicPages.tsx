@@ -28,19 +28,22 @@ function Brand() {
     <Link
       href="/"
       className="flex items-center gap-2.5 text-left"
-      aria-label="Noble Community Support home"
+      aria-label="NobleConnect home"
     >
-      <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#1d4550] text-[#d4eee6]">
-        <HandHeart size={21} />
-      </span>
-      <span>
-        <b className="block text-[13px] font-bold tracking-[.12em] text-[#1f3945]">
-          NOBLE
-        </b>
-        <small className="block text-[9px] font-semibold tracking-[.16em] text-[#71858b]">
-          COMMUNITY SUPPORT
-        </small>
-      </span>
+      <img
+        src="/logo-mark.png"
+        alt=""
+        width={196}
+        height={160}
+        className="h-[40px] w-auto sm:h-[46px]"
+      />
+      <img
+        src="/logo-wordmark.png"
+        alt="NobleConnect"
+        width={478}
+        height={64}
+        className="h-[19px] w-auto sm:h-[22px]"
+      />
     </Link>
   );
 }
