@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Check,
   MousePointerClick,
+  PenLine,
   Plus,
   Send,
   Trash2,
@@ -49,12 +50,16 @@ import {
   FIELD_HELP,
   FIELD_ICON,
   FIELD_NAME,
+  isMySigner,
   SignatureStatusBadge,
+  tokenFromUrl,
 } from "./signature-ui";
 
 interface DraftSigner extends EditorSigner {
   email: string;
   roleLabel: string;
+  /** The person using the editor: they sign in the app, so nothing is sent to them. */
+  mine: boolean;
 }
 
 const EXPIRY_CHOICES = [7, 14, 30, 60, 90];
@@ -78,7 +83,8 @@ function SendModal({
 }) {
   const [days, setDays] = useState<number>(SIGNATURE_LIMITS.defaultExpiryDays);
   const [email, setEmail] = useState(true);
-  const anyEmail = signers.some(signer => signer.email.trim());
+  const iSign = signers.some(signer => signer.mine);
+  const anyEmail = signers.some(signer => !signer.mine && signer.email.trim());
   return (
     <Modal
       title="Send for signature"
@@ -107,6 +113,9 @@ function SendModal({
                   </span>
                 )}
               </span>
+              {signer.mine && (
+                <span className="badge badge-approved shrink-0">You</span>
+              )}
               <span className="shrink-0 text-[#6d7c82]">
                 {count} {count === 1 ? "box" : "boxes"}
               </span>
@@ -143,6 +152,12 @@ function SendModal({
           </label>
         )}
       </div>
+      {iSign && (
+        <InfoNote className="mt-4">
+          You are one of the signers, so no link goes to you: your part opens
+          for you to sign as soon as this is sent.
+        </InfoNote>
+      )}
       <InfoNote className="mt-4">
         Once sent, the document and its boxes are locked: what the signers see
         is exactly what you set up. You can copy each link afterwards, replace
@@ -158,7 +173,7 @@ function SendModal({
           onClick={() => onSend({ days, email: anyEmail && email })}
         >
           <Send size={14} />
-          Send now
+          {iSign ? "Send, then sign" : "Send now"}
         </Btn>
       </div>
     </Modal>
@@ -171,8 +186,11 @@ function SendModal({
  */
 export function RequestDraftEditor({
   request,
+  onSign,
 }: {
   request: SignatureRequestDTO;
+  /** Opens the signing screen for the signed-in person, given the secret of their own link. */
+  onSign: (token: string) => void;
 }) {
   const [, navigate] = useLocation();
   const notify = useNotify();
@@ -196,6 +214,7 @@ export function RequestDraftEditor({
       name: signer.name,
       email: signer.email,
       roleLabel: signer.roleLabel,
+      mine: isMySigner(signer, session?.user),
     }))
   );
   const [fields, setFields] = useState<EditorField[]>(() =>
@@ -296,6 +315,7 @@ export function RequestDraftEditor({
               name: signer.name.trim(),
               email: signer.email.trim(),
               roleLabel: signer.roleLabel.trim(),
+              me: signer.mine,
             })),
             fields: fields.map(field => ({ ...field })),
             rev: revision.current,
@@ -358,13 +378,24 @@ export function RequestDraftEditor({
 
   const ready =
     signers.length > 0 && signers.every(s => (counts.get(s.id) ?? 0) > 0);
+  // Whoever picked "Add me" signs here in the app. When nobody else signs there is nothing to send.
+  const myId = signers.find(signer => signer.mine)?.id ?? null;
+  const onlyMe = signers.length > 0 && signers.every(signer => signer.mine);
+  const actionLabel = onlyMe
+    ? "Sign now"
+    : myId
+      ? "Send and sign"
+      : "Send for signature";
 
   const send = async (options: { days: number; email: boolean }) => {
-    setSendError("");
-    // Wait for any save in progress, then save whatever changed since.
+    // With only yourself signing there is no send dialog, so problems show on the page.
+    const fail = onlyMe ? setError : setSendError;
+    fail("");
+    // Wait for any save in progress, then save whatever changed since. A signer who is "me" is
+    // always saved first, so the server knows not to email them their own link.
     if (inflight.current) await inflight.current;
-    if (dirtyRef.current && !(await latestSave.current(false))) {
-      setSendError(problem() || "The draft could not be saved. Try again.");
+    if ((dirtyRef.current || myId) && !(await latestSave.current(false))) {
+      fail(problem() || "The draft could not be saved. Try again.");
       return;
     }
     try {
@@ -377,14 +408,24 @@ export function RequestDraftEditor({
       dirtyRef.current = false;
       setDirty(false);
       setSendOpen(false);
-      notify(
-        result.emailed.length
-          ? `Sent. ${result.emailed.length} ${result.emailed.length === 1 ? "person was" : "people were"} emailed; copy anyone else's link below.`
-          : "Sent. Copy each person's link below and share it."
-      );
+      const own = result.request.signers.find(signer => signer.id === myId);
+      if (!onlyMe)
+        notify(
+          result.emailed.length
+            ? `Sent. ${result.emailed.length} ${result.emailed.length === 1 ? "person was" : "people were"} emailed; copy anyone else's link below.`
+            : own?.url
+              ? "Sent. Sign your part now; the others' links are on the request."
+              : "Sent. Copy each person's link below and share it."
+        );
+      if (own?.url) onSign(tokenFromUrl(own.url));
     } catch (failure) {
-      setSendError(errorMessage(failure));
+      fail(errorMessage(failure));
     }
+  };
+  const start = () => {
+    if (onlyMe)
+      void send({ days: SIGNATURE_LIMITS.defaultExpiryDays, email: false });
+    else setSendOpen(true);
   };
 
   const addSigner = (seed: Partial<DraftSigner> = {}) => {
@@ -394,6 +435,7 @@ export function RequestDraftEditor({
       name: "",
       email: "",
       roleLabel: "",
+      mine: false,
       ...seed,
     };
     setSigners(previous => [...previous, signer]);
@@ -439,10 +481,15 @@ export function RequestDraftEditor({
   };
 
   const checklist: Array<[boolean, string]> = [
-    [signers.length > 0, "Add the people who need to sign"],
     [
-      signers.length > 0 && signers.every(s => (counts.get(s.id) ?? 0) > 0),
-      "Give each person at least one box on the document",
+      signers.length > 0,
+      onlyMe ? "You are the one signing" : "Add the people who need to sign",
+    ],
+    [
+      ready,
+      onlyMe
+        ? "Place at least one box where you will sign"
+        : "Give each person at least one box on the document",
     ],
   ];
 
@@ -471,9 +518,13 @@ export function RequestDraftEditor({
           >
             Save draft
           </Btn>
-          <Btn disabled={!ready} onClick={() => setSendOpen(true)}>
-            <Send size={14} />
-            Send for signature
+          <Btn
+            disabled={!ready}
+            loading={onlyMe && sendRequest.isPending}
+            onClick={start}
+          >
+            {onlyMe ? <PenLine size={14} /> : <Send size={14} />}
+            {actionLabel}
           </Btn>
         </div>
       </div>
@@ -628,6 +679,11 @@ export function RequestDraftEditor({
                     {counts.get(signer.id) ?? 0}{" "}
                     {(counts.get(signer.id) ?? 0) === 1 ? "box" : "boxes"}{" "}
                     placed
+                    {signer.mine && (
+                      <span className="ml-1.5 font-semibold text-[#187153]">
+                        · This is you: you sign here, no link is sent
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -645,7 +701,7 @@ export function RequestDraftEditor({
                 >
                   <Plus size={13} /> Add person
                 </Btn>
-                {session?.user && (
+                {session?.user && !myId && (
                   <Btn
                     variant="quiet"
                     onClick={() =>
@@ -653,6 +709,7 @@ export function RequestDraftEditor({
                         name: session.user.name,
                         email: session.user.email,
                         roleLabel: "Noble Community Support",
+                        mine: true,
                       })
                     }
                   >
@@ -844,7 +901,7 @@ export function RequestDraftEditor({
             </div>
           </Panel>
 
-          <Panel title="Ready to send?">
+          <Panel title={onlyMe ? "Ready to sign?" : "Ready to send?"}>
             <ul className="space-y-1.5 p-4 text-[12px]">
               {checklist.map(([ok, text]) => (
                 <li
@@ -866,11 +923,18 @@ export function RequestDraftEditor({
               <Btn
                 className="w-full justify-center"
                 disabled={!ready}
-                onClick={() => setSendOpen(true)}
+                loading={onlyMe && sendRequest.isPending}
+                onClick={start}
               >
-                <Send size={14} />
-                Send for signature
+                {onlyMe ? <PenLine size={14} /> : <Send size={14} />}
+                {actionLabel}
               </Btn>
+              {onlyMe && (
+                <p className="mt-2 text-[10.5px] leading-4 text-[#6d7c82]">
+                  Nothing is sent to anyone. The document opens for you to sign
+                  straight away.
+                </p>
+              )}
             </div>
           </Panel>
         </aside>

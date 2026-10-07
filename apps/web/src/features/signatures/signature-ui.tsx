@@ -92,6 +92,23 @@ export const STATE_TITLE: Record<Exclude<SigningState, "open">, string> = {
   expired: "This link has expired",
 };
 
+/**
+ * Whether a signer is the person looking at the screen. They added themselves with "Add me"; for
+ * requests made before that was recorded, the signer's email being their own says the same.
+ */
+export function isMySigner(
+  signer: { userId?: string | null; email: string },
+  me: { id: string; email: string } | null | undefined
+): boolean {
+  if (!me) return false;
+  if (signer.userId) return signer.userId === me.id;
+  const email = signer.email.trim().toLowerCase();
+  return Boolean(email) && email === me.email.trim().toLowerCase();
+}
+
+/** The secret at the end of a signing link, which is what the signing screen is opened with. */
+export const tokenFromUrl = (url: string) => url.split("/sign/")[1] ?? "";
+
 /** "Alex Client" → "AC", for the little round marker on a box. */
 export const initialsOf = (name: string) =>
   name

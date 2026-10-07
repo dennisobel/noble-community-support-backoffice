@@ -59,6 +59,8 @@ export async function emailCompleted(doc: SignatureRequestDoc): Promise<void> {
   const subject = `Signed: "${doc.title}"`;
   for (const signer of doc.signers) {
     if (!signer.email || !signer.token) continue;
+    // The sender who signed it themselves gets the one email below, not two.
+    if (signer.userId && signer.userId === doc.createdBy?.id) continue;
     const link = signUrlFor(signer.token);
     await attempt({
       to: signer.email,

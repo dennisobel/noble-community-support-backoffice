@@ -1231,6 +1231,8 @@ export interface SignerDTO {
   email: string;
   /** What this person is to the document, such as "Participant" or "Support worker". */
   roleLabel: string;
+  /** Set when the signer is a team member who added themselves, so they sign in the app. */
+  userId: string | null;
   status: SignerStatus;
   viewedAt: string | null;
   signedAt: string | null;

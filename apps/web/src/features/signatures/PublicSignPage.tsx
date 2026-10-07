@@ -12,7 +12,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
 import { API_PREFIX } from "@shared/const";
-import type { PublicSigningDTO, PublicSigningFieldDTO } from "@shared/dto";
+import type {
+  PublicSigningDTO,
+  PublicSigningFieldDTO,
+  PublicSigningResultDTO,
+} from "@shared/dto";
 import { errorMessage } from "@/api/client";
 import {
   useDeclineSigning,
@@ -56,7 +60,7 @@ function Shell({
   );
 }
 
-function Notice({
+export function Notice({
   tone = "info",
   title,
   children,
@@ -121,7 +125,7 @@ function Reader({
   );
 }
 
-function ClosedView({
+export function ClosedView({
   data,
   token,
 }: {
@@ -270,13 +274,21 @@ function TextModal({
   );
 }
 
-function SigningView({
+/**
+ * The document with this signer's boxes to fill in. A link holder sees it on its own page; a team
+ * member who added themselves as a signer gets the same screen inside the app (`onSigned`).
+ */
+export function SigningView({
   data,
   token,
+  onSigned,
 }: {
   data: PublicSigningDTO;
   token: string;
+  /** Signing inside the app: called once the signature is recorded, in place of the thank-you page. */
+  onSigned?: (state: PublicSigningResultDTO["state"]) => void;
 }) {
+  const inApp = Boolean(onSigned);
   const qc = useQueryClient();
   const file = usePdfDocument(`/public/sign/${token}/pdf`);
   const submit = useSubmitSigning(token);
@@ -338,7 +350,7 @@ function SigningView({
   const finish = async () => {
     setError("");
     try {
-      await submit.mutateAsync({
+      const result = await submit.mutateAsync({
         consent: true,
         signature: signature ?? undefined,
         values: ordered
@@ -349,6 +361,10 @@ function SigningView({
               values[field.id] ?? (field.type === "checkbox" ? "false" : ""),
           })),
       });
+      if (onSigned) {
+        onSigned(result.state);
+        return;
+      }
       await qc.invalidateQueries({ queryKey: ["public-signing", token] });
       window.scrollTo({ top: 0 });
     } catch (failure) {
@@ -385,7 +401,9 @@ function SigningView({
           {data.title}
         </h1>
         <p className="mt-1 text-[13px] text-[#52666f]">
-          Hi {first}, {data.senderName} has asked you to sign this document.
+          {inApp
+            ? `You are signing this as ${data.signer.name}${data.signer.roleLabel ? `, ${data.signer.roleLabel}` : ""}.`
+            : `Hi ${first}, ${data.senderName} has asked you to sign this document.`}
         </p>
         {data.message && (
           <blockquote className="mt-3 rounded-md border-l-4 border-[#12766f] bg-[#f1f8f6] px-3 py-2 text-[13px] leading-5 text-[#2f4852]">
@@ -421,7 +439,7 @@ function SigningView({
           </a>
         </div>
         <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#7d8b91]">
-          <span>No account needed. This link is only for you.</span>
+          {!inApp && <span>No account needed. This link is only for you.</span>}
           {data.expiresAt && (
             <span className="inline-flex items-center gap-1">
               <Clock size={11} /> Valid until{" "}
@@ -429,7 +447,7 @@ function SigningView({
             </span>
           )}
         </p>
-        {declineLink}
+        {!inApp && declineLink}
         {data.others.length > 0 && (
           <p className="mt-1 text-[11px] text-[#7d8b91]">
             Also signing:{" "}
@@ -563,7 +581,9 @@ function SigningView({
             );
           })
         )}
-        {file.pdf && <p className="pt-2 text-center">{declineLink}</p>}
+        {file.pdf && !inApp && (
+          <p className="pt-2 text-center">{declineLink}</p>
+        )}
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#d9e6e2] bg-white shadow-[0_-6px_18px_rgba(24,45,52,.10)]">

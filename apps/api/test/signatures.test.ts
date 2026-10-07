@@ -10,7 +10,13 @@ import {
   toPagePoint,
 } from "../src/modules/signatures/geometry";
 import { completeStuckRequests } from "../src/modules/signatures/signing";
-import { API, signedInAgent, startTestApp, stopTestApp } from "./helpers";
+import {
+  ADMIN,
+  API,
+  signedInAgent,
+  startTestApp,
+  stopTestApp,
+} from "./helpers";
 import { createParticipant, pngBuffer } from "./fixtures";
 
 let app: Express;
@@ -282,12 +288,10 @@ describe("drafts", () => {
     // A box for a stranger, off the page, or sticking out of it
     expect(
       (
-        await admin
-          .patch(`${API}/signatures/${id}`)
-          .send({
-            signers: [signer],
-            fields: [{ ...field, signerId: "nobody0001" }],
-          })
+        await admin.patch(`${API}/signatures/${id}`).send({
+          signers: [signer],
+          fields: [{ ...field, signerId: "nobody0001" }],
+        })
       ).status
     ).toBe(422);
     expect(
@@ -782,6 +786,127 @@ describe("links", () => {
     expect(
       (await admin.post(`${API}/signatures/${id}/signers/bad!/remind`)).status
     ).toBe(404);
+  });
+});
+
+describe("signing it yourself", () => {
+  const box = (id: string, signerId: string, y: number) => ({
+    id,
+    signerId,
+    type: "signature",
+    page: 1,
+    x: 0.1,
+    y,
+    w: 0.4,
+    h: 0.15,
+    required: true,
+  });
+  const myself = (extra: Record<string, unknown> = {}) => ({
+    id: "self000001",
+    name: ADMIN.name,
+    email: ADMIN.email,
+    roleLabel: "Noble Community Support",
+    ...extra,
+  });
+  const someoneElse = {
+    id: "other00001",
+    name: "Alex Client",
+    email: "alex@example.test",
+  };
+  const userIds = (body: any) => body.signers.map((s: any) => s.userId);
+
+  it("marks the signer who added themselves, and only ever as the person saving", async () => {
+    const adminId = (await admin.get(`${API}/auth/me`)).body.user.id as string;
+    const id = (await upload(admin, await samplePdf())).body.id as string;
+    const save = (agent: request.Agent, signers: unknown[]) =>
+      agent.patch(`${API}/signatures/${id}`).send({ signers });
+
+    const saved = await save(admin, [myself({ me: true }), someoneElse]);
+    expect(saved.status).toBe(200);
+    expect(userIds(saved.body)).toEqual([adminId, null]);
+
+    // A colleague working on the same draft
+    await request(app).post(`${API}/auth/register`).send({
+      name: "Casey Colleague",
+      email: "colleague@noble.test",
+      password: "correct horse battery",
+    });
+    const person = (await admin.get(`${API}/users`)).body.find(
+      (u: any) => u.email === "colleague@noble.test"
+    );
+    await admin
+      .post(`${API}/users/${person.id}/approve`)
+      .send({ role: "coordinator", modules: ["files"] });
+    const colleague = request.agent(app);
+    await colleague.post(`${API}/auth/login`).send({
+      email: "colleague@noble.test",
+      password: "correct horse battery",
+    });
+
+    // Their save cannot take the marker away, and "me" on their side means them
+    const theirs = await save(colleague, [
+      myself({ me: false }),
+      { ...someoneElse, me: true },
+    ]);
+    expect(userIds(theirs.body)).toEqual([adminId, person.id]);
+    // Turning the card into someone else drops it; a card that is left alone keeps its marker
+    const renamed = await save(colleague, [
+      myself({ name: "Somebody Else", me: false }),
+      someoneElse,
+    ]);
+    expect(userIds(renamed.body)).toEqual([null, person.id]);
+    // The owner can take it back, and give it up
+    expect(userIds((await save(admin, [myself({ me: true })])).body)).toEqual([
+      adminId,
+    ]);
+    expect(userIds((await save(admin, [myself({ me: false })])).body)).toEqual([
+      null,
+    ]);
+    expect((await admin.delete(`${API}/signatures/${id}`)).status).toBe(204);
+  });
+
+  it("lets the only signer sign straight away, with nothing sent to anyone", async () => {
+    const id = (await upload(admin, await samplePdf())).body.id as string;
+    await admin.patch(`${API}/signatures/${id}`).send({
+      signers: [myself({ me: true })],
+      fields: [box("fselfsig01", "self000001", 0.6)],
+    });
+    const sent = await admin.post(`${API}/signatures/${id}/send`).send({});
+    expect(sent.status).toBe(200);
+    expect(sent.body.emailed).toEqual([]);
+    const [mine] = sent.body.request.signers;
+    expect(mine.url).toContain("/sign/");
+    expect(
+      sent.body.request.events.find((e: any) => e.type === "sent").detail
+    ).toBe(`Set up for ${ADMIN.name} to sign in the app`);
+
+    // The app opens their own link for them: one signature finishes the document
+    const done = await request(app)
+      .post(publicApi(tokenOf(mine.url), "/submit"))
+      .send({ consent: true, signature: PNG_URL, values: [] });
+    expect(done.body).toEqual({ state: "completed" });
+    const detail = await admin.get(`${API}/signatures/${id}`);
+    expect(detail.body).toMatchObject({ status: "completed", signedCount: 1 });
+    expect(detail.body.signers[0].userId).toBeTruthy();
+  });
+
+  it("sends to the others and leaves the sender to sign in the app", async () => {
+    const id = (await upload(admin, await samplePdf())).body.id as string;
+    await admin.patch(`${API}/signatures/${id}`).send({
+      signers: [myself({ me: true }), someoneElse],
+      fields: [
+        box("fselfsig02", "self000001", 0.2),
+        box("fothersig2", "other00001", 0.6),
+      ],
+    });
+    const sent = await admin.post(`${API}/signatures/${id}/send`).send({});
+    expect(sent.status).toBe(200);
+    expect(
+      sent.body.request.events.find((e: any) => e.type === "sent").detail
+    ).toBe(`Sent to Alex Client; ${ADMIN.name} signs in the app`);
+    expect(
+      (await admin.post(`${API}/signatures/${id}/cancel`).send({})).status
+    ).toBe(200);
   });
 });
 

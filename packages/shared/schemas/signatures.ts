@@ -46,6 +46,8 @@ export const signerInput = z.object({
   name: requiredText(120, "Enter the signer's name."),
   email: optionalEmail,
   roleLabel: text(60).optional(),
+  /** This signer is the person saving the draft, who will sign in the app instead of from a link. */
+  me: z.boolean().optional(),
 });
 
 const unit = z.number().min(0).max(1);

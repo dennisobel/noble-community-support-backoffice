@@ -60,7 +60,11 @@ export function signaturesRouter(): Router {
   });
   router.patch("/:id", async (req, res) => {
     res.json(
-      await saveDraft(requestId(req), parse(signatureDraftSchema, req.body))
+      await saveDraft(
+        requestId(req),
+        parse(signatureDraftSchema, req.body),
+        ctx(req)
+      )
     );
   });
   router.post("/:id/send", async (req, res) => {

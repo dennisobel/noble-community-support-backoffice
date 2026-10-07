@@ -122,6 +122,7 @@ export function toRequestDTO(
     name: signer.name,
     email: signer.email ?? "",
     roleLabel: signer.roleLabel ?? "",
+    userId: signer.userId ?? null,
     status: signer.status,
     viewedAt: iso(signer.viewedAt),
     signedAt: iso(signer.signedAt),

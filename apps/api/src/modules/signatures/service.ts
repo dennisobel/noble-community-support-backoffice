@@ -190,7 +190,8 @@ export async function createSignatureRequest(
 /** Saves the title, the people and the boxes of a draft. Only a draft can change: a sent request is what the signers saw. */
 export async function saveDraft(
   id: string,
-  input: z.output<typeof signatureDraftSchema>
+  input: z.output<typeof signatureDraftSchema>,
+  ctx: RequestContext
 ): Promise<SignatureRequestDTO> {
   const current = await requestDoc(id);
   if (current.status !== "draft")
@@ -232,12 +233,24 @@ export async function saveDraft(
     }
   }
   if (signerInputs) {
+    const before = new Map(current.signers.map(signer => [signer.id, signer]));
+    // "Me" can only ever mean whoever is saving. A colleague's marker survives someone else's
+    // save for as long as the card still names the same person.
+    const ownerOf = (signer: (typeof signerInputs)[number]): string | null => {
+      if (signer.me === true) return ctx.actor.id;
+      const kept = before.get(signer.id);
+      if (!kept?.userId || kept.name !== signer.name) return null;
+      return signer.me === false && kept.userId === ctx.actor.id
+        ? null
+        : kept.userId;
+    };
     $set.signers = signerInputs.map(
       (signer): SignerSub => ({
         id: signer.id,
         name: signer.name,
         email: signer.email ?? "",
         roleLabel: signer.roleLabel ?? "",
+        userId: ownerOf(signer),
         token: null,
         status: "pending",
         viewedAt: null,
@@ -293,6 +306,7 @@ export async function saveDraft(
 /**
  * Sends a draft: every signer gets their own private link, and the layout is locked. The links work
  * for `expiresInDays`. Emailing is best effort, so the sender can always copy the links instead.
+ * A sender who is also a signer is not emailed: they sign in the app straight away.
  */
 export async function sendSignatureRequest(
   id: string,
@@ -316,6 +330,15 @@ export async function sendSignatureRequest(
     token: randomToken(32),
     status: "pending" as const,
   }));
+  const isSender = (signer: SignerSub) => signer.userId === ctx.actor.id;
+  const others = signers.filter(signer => !isSender(signer));
+  const detail = !others.length
+    ? `Set up for ${ctx.actor.name} to sign in the app`
+    : `Sent to ${others.map(signer => signer.name).join(", ")}${
+        others.length < signers.length
+          ? `; ${ctx.actor.name} signs in the app`
+          : ""
+      }`;
   const sent = await SignatureRequest.findOneAndUpdate(
     { _id: id, status: "draft", rev: doc.rev },
     {
@@ -327,12 +350,7 @@ export async function sendSignatureRequest(
       },
       $inc: { rev: 1 },
       $push: {
-        events: makeEvent(
-          "sent",
-          ctx.actor.name,
-          `Sent to ${signers.map(signer => signer.name).join(", ")}`,
-          { ip: ctx.ip }
-        ),
+        events: makeEvent("sent", ctx.actor.name, detail, { ip: ctx.ip }),
       },
     },
     { returnDocument: "after", lean: true }
@@ -342,7 +360,8 @@ export async function sendSignatureRequest(
   const emailed: string[] = [];
   if (input.emailSigners !== false)
     for (const signer of sent.signers)
-      if (await emailSigner(sent, signer, "request")) emailed.push(signer.id);
+      if (!isSender(signer) && (await emailSigner(sent, signer, "request")))
+        emailed.push(signer.id);
   const final = emailed.length
     ? await SignatureRequest.findOneAndUpdate(
         { _id: id },
@@ -360,7 +379,9 @@ export async function sendSignatureRequest(
     entityType: "signature",
     entityId: id,
     participantId: sent.participantId,
-    summary: `sent ${sent.title} for signature to ${signers.length} ${signers.length === 1 ? "person" : "people"}`,
+    summary: others.length
+      ? `sent ${sent.title} for signature to ${others.length} ${others.length === 1 ? "person" : "people"}`
+      : `set up ${sent.title} to sign it themselves`,
     ip: ctx.ip,
   });
   return {

@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileCheck2,
   Mail,
+  PenLine,
   RefreshCw,
   Trash2,
 } from "lucide-react";
@@ -32,6 +33,7 @@ import {
   Modal,
   Panel,
 } from "@/components/app/ui";
+import { useAuth } from "@/lib/auth";
 import { fileSize, formatDateTime, prettyDate } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
 import { PdfPage } from "./PdfPage";
@@ -40,19 +42,26 @@ import {
   colourAt,
   copyText,
   FIELD_ICON,
+  isMySigner,
   SIGNER_STATUS_CLASS,
   SIGNER_STATUS_LABEL,
   SignatureStatusBadge,
+  tokenFromUrl,
 } from "./signature-ui";
 
 function SignerRow({
   request,
   signer,
   index,
+  mine,
+  onSign,
 }: {
   request: SignatureRequestDTO;
   signer: SignerDTO;
   index: number;
+  /** This signer is the person looking at the page, so they sign here and need no link. */
+  mine: boolean;
+  onSign: (token: string) => void;
 }) {
   const notify = useNotify();
   const remind = useRemindSigner();
@@ -99,6 +108,7 @@ function SignerRow({
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold text-[#2f4852]">
             {signer.name}
+            {mine && <span className="font-normal text-[#6d7c82]"> (you)</span>}
           </div>
           <div className="truncate text-[11px] text-[#6d7c82]">
             {[signer.roleLabel, signer.email].filter(Boolean).join(" · ") ||
@@ -124,7 +134,20 @@ function SignerRow({
           <div>Emailed {formatDateTime(signer.emailedAt)}</div>
         )}
       </div>
-      {open && waiting && signer.url && (
+      {open && waiting && signer.url && mine && (
+        <div className="mt-2.5">
+          <Btn
+            className="!h-8 text-[11px]"
+            onClick={() => onSign(tokenFromUrl(signer.url!))}
+          >
+            <PenLine size={13} /> Sign now
+          </Btn>
+          <p className="mt-1.5 text-[10.5px] leading-4 text-[#7d8b91]">
+            This one is yours. You sign it here, so there is no link to send.
+          </p>
+        </div>
+      )}
+      {open && waiting && signer.url && !mine && (
         <div className="mt-2.5">
           <input
             readOnly
@@ -309,11 +332,15 @@ function CancelModal({
 /** A request that has been sent: how far it has got, each person's link, the document, and the trail of what happened. */
 export function RequestStatusView({
   request,
+  onSign,
 }: {
   request: SignatureRequestDTO;
+  /** Opens the signing screen for the signed-in person, given the secret of their own link. */
+  onSign: (token: string) => void;
 }) {
   const [, navigate] = useLocation();
   const notify = useNotify();
+  const { session } = useAuth();
   const seal = useSealSignature();
   const deleteRequest = useDeleteSignature();
   const [modal, setModal] = useState<"extend" | "cancel" | "delete" | null>(
@@ -330,6 +357,18 @@ export function RequestStatusView({
   const removable = !completed && request.status !== "sent";
   const signerIndex = (id: string) =>
     request.signers.findIndex(signer => signer.id === id);
+  const waiting = (signer: SignerDTO) =>
+    request.status === "sent" &&
+    Boolean(signer.url) &&
+    (signer.status === "pending" || signer.status === "viewed");
+  const isMine = (signer: SignerDTO) => isMySigner(signer, session?.user);
+  // My own signature is still outstanding: I sign it here.
+  const myTurn = request.signers.find(
+    signer => isMine(signer) && waiting(signer)
+  );
+  const othersWaiting = request.signers.some(
+    signer => !isMine(signer) && waiting(signer)
+  );
 
   const download = async (kind: "original" | "signed") => {
     setError("");
@@ -392,6 +431,19 @@ export function RequestStatusView({
       <div className="mt-3">
         <FormAlert message={error} />
       </div>
+      {myTurn && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-[#bfe0d8] bg-[#eef8f5] p-3">
+          <div className="min-w-0 flex-1 text-[12px] leading-5 text-[#1f5a54]">
+            <strong>Your signature is needed.</strong>{" "}
+            {othersWaiting
+              ? "Sign your part here; the other links are listed under People."
+              : "Sign it here. Nothing has to be sent to anyone."}
+          </div>
+          <Btn onClick={() => onSign(tokenFromUrl(myTurn.url!))}>
+            <PenLine size={14} /> Sign now
+          </Btn>
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0">
@@ -507,6 +559,8 @@ export function RequestStatusView({
                   request={request}
                   signer={signer}
                   index={index}
+                  mine={isMine(signer)}
+                  onSign={onSign}
                 />
               ))}
               {request.expiresAt && request.status !== "completed" && (
@@ -518,7 +572,7 @@ export function RequestStatusView({
                     : `Links work until ${prettyDate(request.expiresAt.slice(0, 10))}.`}
                 </p>
               )}
-              {request.status === "sent" && (
+              {othersWaiting && (
                 <InfoNote>
                   Share each link only with that person. Anyone who has it can
                   sign for them.

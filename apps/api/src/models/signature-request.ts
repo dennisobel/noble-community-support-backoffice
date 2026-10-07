@@ -29,6 +29,8 @@ export interface SignerSub {
   name: string;
   email: string;
   roleLabel: string;
+  /** The team member this signer is, when they added themselves; they sign in the app, not from an emailed link. */
+  userId?: string | null;
   /** The secret in this person's signing link. Null until the request is sent. */
   token: string | null;
   status: SignerStatus;
@@ -112,6 +114,7 @@ const signerSchema = new Schema<SignerSub>(
     name: { type: String, required: true, trim: true },
     email: { type: String, default: "" },
     roleLabel: { type: String, default: "" },
+    userId: { type: String, default: null },
     token: { type: String, default: null },
     status: { type: String, enum: SIGNER_STATUSES, default: "pending" },
     viewedAt: { type: Date, default: null },
