@@ -10,6 +10,7 @@ import {
   Info,
   PenLine,
   Printer,
+  RotateCcw,
   Sparkles,
   SquareArrowOutUpRight,
   Trash2,
@@ -153,6 +154,7 @@ export default function RecordEditorPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   /** Correcting a submitted note: the note opens for editing, with a reason, and nothing else does. */
   const [amending, setAmending] = useState(false);
   const [reason, setReason] = useState("");
@@ -375,6 +377,19 @@ export default function RecordEditorPage() {
     setForm(current => (current ? { ...current, [key]: value } : current));
     setDirty(true);
     setFieldErrors(errors => ({ ...errors, [key]: "" }));
+  };
+
+  /** Clears the written-up part of the record so the user can start the note again; the shift facts above it (who, what, when) are left alone. */
+  const resetNote = () => {
+    setForm(current =>
+      current
+        ? { ...current, ...EMPTY_NOTE, km: "0", voiceNoteId: "", confirmed: false }
+        : current
+    );
+    setDirty(true);
+    setFieldErrors({});
+    setConfirmReset(false);
+    notify("Note cleared. Save draft once you're ready.");
   };
 
   const payload = () => ({
@@ -1263,6 +1278,14 @@ export default function RecordEditorPage() {
                 </Btn>
               )}
               <Btn
+                variant="quiet"
+                onClick={() => setConfirmReset(true)}
+                disabled={busy}
+              >
+                <RotateCcw size={14} />
+                Reset note
+              </Btn>
+              <Btn
                 variant="secondary"
                 onClick={() => void saveDraft()}
                 loading={create.isPending || update.isPending}
@@ -1327,6 +1350,17 @@ export default function RecordEditorPage() {
               onError: failure => notify(errorMessage(failure), "error"),
             })
           }
+        />
+      )}
+
+      {confirmReset && (
+        <ConfirmModal
+          title="Reset this note?"
+          body="Support provided, the shift summary, health, incidents, handover, travel kilometres, the linked recording and the declaration are all cleared so you can start the note afresh. The participant, staff member, service, date and times above are not affected. Nothing is deleted until you save."
+          confirmLabel="Reset note"
+          danger
+          onClose={() => setConfirmReset(false)}
+          onConfirm={resetNote}
         />
       )}
     </>
