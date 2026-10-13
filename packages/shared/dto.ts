@@ -2,6 +2,7 @@
 import type {
   AbcBehaviour,
   AccessModule,
+  AmendmentRequestStatus,
   AnnouncementAudience,
   AvailabilityMode,
   ChecklistItemStatus,
@@ -358,6 +359,45 @@ export interface BillableDTO {
   subtotal: number;
 }
 
+/** One section an amendment changed, as it read before and after. */
+export interface NoteChangeDTO {
+  field: string;
+  label: string;
+  before: string;
+  after: string;
+}
+
+/** A correction made to a submitted note: who, when, why and what. */
+export interface NoteAmendmentDTO {
+  id: string;
+  at: string;
+  by: ActorRef | null;
+  reason: string;
+  requestId: string | null;
+  changes: NoteChangeDTO[];
+}
+
+/** A worker asking for their submitted note to be corrected. */
+export interface NoteAmendmentRequestDTO {
+  id: string;
+  at: string;
+  by: ActorRef | null;
+  reason: string;
+  status: AmendmentRequestStatus;
+  resolvedAt: string | null;
+  resolvedBy: ActorRef | null;
+  resolution: string;
+}
+
+/** A formal report filed for the same shift or day as a note. */
+export interface RelatedReportDTO {
+  kind: "incident" | "abc";
+  id: string;
+  date: string;
+  status: string;
+  summary: string;
+}
+
 export interface ServiceRecordDTO {
   id: string;
   clientId: string;
@@ -374,11 +414,25 @@ export interface ServiceRecordDTO {
   end: string;
   hours: number;
   location: string;
+  /** The progress note. Notes written before the shift summary existed read their two old boxes as one. */
+  supportTypes: string[];
   support: string;
-  response: string;
+  summary: string;
+  goals: string[];
   outcome: string;
-  observations: string;
+  achievements: string;
+  health: string[];
+  healthDetails: string;
+  incident: string[];
+  incidentDetails: string;
   followUp: string;
+  /** Flags a health concern, a follow-up, an incident or a behaviour of concern. */
+  attention: boolean;
+  amended: boolean;
+  amendments: NoteAmendmentDTO[];
+  amendmentRequests: NoteAmendmentRequestDTO[];
+  /** Incident and behaviour reports for the same shift or day. Only on a single record, not in lists. */
+  relatedReports?: RelatedReportDTO[];
   km: number;
   quantity: number | null;
   confirmed: boolean;
@@ -401,6 +455,47 @@ export interface ServiceRecordDTO {
 }
 
 export type RecordCountsDTO = Record<RecordStatus, number>;
+
+/** A rostered shift that has finished with no progress note for one of its participants. */
+export interface MissingNoteDTO {
+  shiftId: string;
+  date: string;
+  start: string;
+  end: string;
+  type: string;
+  clientId: string;
+  clientName: string;
+  staffId: string | null;
+  staffName: string;
+  /** More than a day has passed since the shift ended. */
+  overdue: boolean;
+}
+
+export interface NotesOverviewDTO {
+  today: string;
+  from: string;
+  to: string;
+  completedToday: number;
+  awaitingSubmission: number;
+  missing: number;
+  needsReview: number;
+  flagged: number;
+  amendmentRequests: number;
+  missingNotes: MissingNoteDTO[];
+}
+
+/** What the next worker reads before a shift: the last notes about the participant. */
+export interface HandoverNoteDTO {
+  id: string;
+  date: string;
+  type: string;
+  staffName: string;
+  summary: string;
+  followUp: string;
+  health: string[];
+  healthDetails: string;
+  incident: string[];
+}
 
 /* ───────────── Invoices ───────────── */
 
@@ -821,6 +916,8 @@ export interface NotificationDTO {
   type:
     | "record_returned"
     | "review_pending"
+    | "note_flagged"
+    | "note_amendment"
     | "drafts_stale"
     | "plan_ending"
     | "budget_alert"

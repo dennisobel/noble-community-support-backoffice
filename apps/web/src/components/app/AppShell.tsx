@@ -4,6 +4,7 @@ import {
   Bell,
   CalendarCheck,
   CalendarDays,
+  ClipboardPenLine,
   Clock,
   FileSignature,
   FolderOpen,
@@ -62,6 +63,9 @@ const RecordEditorPage = lazy(
 );
 const ReviewQueuePage = lazy(
   () => import("@/features/records/ReviewQueuePage")
+);
+const ProgressNotesPage = lazy(
+  () => import("@/features/records/ProgressNotesPage")
 );
 const ReportsPage = lazy(() => import("@/features/reports/ReportsPage"));
 const RosterPage = lazy(() => import("@/features/roster/RosterPage"));
@@ -138,6 +142,12 @@ const NAV: NavItem[] = [
       ),
   },
   {
+    name: "Progress notes",
+    icon: ClipboardPenLine,
+    href: "/app/progress-notes",
+    active: path => path.startsWith("/app/progress-notes"),
+  },
+  {
     name: "Organisation files",
     icon: FolderOpen,
     href: "/app/files",
@@ -211,6 +221,8 @@ const NAV_MODULE: Record<string, AccessModule | undefined> = {
   "/app/roster": "roster",
   "/app/live": "live",
   "/app/clients": "clients",
+  // Progress notes are part of the client file, so they follow the Clients module
+  "/app/progress-notes": "clients",
   "/app/files": "files",
   // E-signatures are document work, so they follow the Organisation files module
   "/app/signatures": "files",
@@ -238,6 +250,7 @@ function pageTitle(path: string): string {
   if (path.startsWith("/app/records/new")) return "New service record";
   if (path.startsWith("/app/records/")) return "Service record";
   if (path.startsWith("/app/review")) return "Review queue";
+  if (path.startsWith("/app/progress-notes")) return "Progress notes";
   if (path.startsWith("/app/invoices/new")) return "Create invoice";
   if (/^\/app\/invoices\/[^/]+/.test(path)) return "Invoice preview";
   if (path.startsWith("/app/signatures/") && path.length > 16)
@@ -637,81 +650,93 @@ export default function AppShell() {
               }
             />
           ) : (
-          <Suspense fallback={<LoadingBlock />}>
-            <Switch>
-              <Route path="/app" component={DashboardPage} />
-              <Route path="/app/my-day" component={MyDayPage} />
-              <Route path="/app/notes/:id?" component={NotesPage} />
-              <Route path="/app/roster" component={RosterPage} />
-              <Route path="/app/clients" component={ClientsPage} />
-              <Route
-                path="/app/clients/:id/:tab?"
-                component={ClientProfilePage}
-              />
-              <Route path="/app/review" component={ReviewQueuePage} />
-              <Route path="/app/records/new" component={RecordEditorPage} />
-              <Route path="/app/records/:id" component={RecordEditorPage} />
-              <Route path="/app/files" component={OrganisationFilesPage} />
-              <Route path="/app/signatures" component={SignaturesPage} />
-              <Route
-                path="/app/signatures/:id"
-                component={SignatureRequestPage}
-              />
-              <Route path="/app/services" component={ServicesPage} />
-              <Route path="/app/invoices" component={InvoicesPage} />
-              <Route path="/app/invoices/new" component={InvoicesPage} />
-              <Route path="/app/invoices/:id" component={InvoicePreviewPage} />
-              <Route path="/app/staff/:section?" component={StaffPage} />
-              <Route
-                path="/app/payroll/:section?/:id?"
-                component={PayrollPage}
-              />
-              <Route path="/app/feedback/:id?" component={FeedbackPage} />
-              <Route path="/app/messages/:id?" component={MessagesPage} />
-              <Route path="/app/live" component={LiveTrackingPage} />
-              <Route
-                path="/app/worker-reports/:section?"
-                component={WorkerReportsPage}
-              />
-              <Route path="/app/reports" component={ReportsPage} />
-              <Route path="/app/voice" component={VoiceInboxPage} />
-              <Route path="/app/voice/record" component={RecorderPage} />
-              <Route path="/app/voice/settings" component={VoiceInboxPage} />
-              <Route path="/app/voice/:id" component={VoiceDetailPage} />
-              <Route path="/app/settings/:section?" component={SettingsPage} />
-              <Route>
-                <EmptyState
-                  title="Page not found"
-                  text="This part of the workspace does not exist."
-                  action={
-                    <Link href="/app">
-                      <Btn>Go to the dashboard</Btn>
-                    </Link>
-                  }
+            <Suspense fallback={<LoadingBlock />}>
+              <Switch>
+                <Route path="/app" component={DashboardPage} />
+                <Route path="/app/my-day" component={MyDayPage} />
+                <Route path="/app/notes/:id?" component={NotesPage} />
+                <Route path="/app/roster" component={RosterPage} />
+                <Route path="/app/clients" component={ClientsPage} />
+                <Route
+                  path="/app/clients/:id/:tab?"
+                  component={ClientProfilePage}
                 />
-              </Route>
-            </Switch>
-          </Suspense>
+                <Route path="/app/review" component={ReviewQueuePage} />
+                <Route
+                  path="/app/progress-notes"
+                  component={ProgressNotesPage}
+                />
+                <Route path="/app/records/new" component={RecordEditorPage} />
+                <Route path="/app/records/:id" component={RecordEditorPage} />
+                <Route path="/app/files" component={OrganisationFilesPage} />
+                <Route path="/app/signatures" component={SignaturesPage} />
+                <Route
+                  path="/app/signatures/:id"
+                  component={SignatureRequestPage}
+                />
+                <Route path="/app/services" component={ServicesPage} />
+                <Route path="/app/invoices" component={InvoicesPage} />
+                <Route path="/app/invoices/new" component={InvoicesPage} />
+                <Route
+                  path="/app/invoices/:id"
+                  component={InvoicePreviewPage}
+                />
+                <Route path="/app/staff/:section?" component={StaffPage} />
+                <Route
+                  path="/app/payroll/:section?/:id?"
+                  component={PayrollPage}
+                />
+                <Route path="/app/feedback/:id?" component={FeedbackPage} />
+                <Route path="/app/messages/:id?" component={MessagesPage} />
+                <Route path="/app/live" component={LiveTrackingPage} />
+                <Route
+                  path="/app/worker-reports/:section?"
+                  component={WorkerReportsPage}
+                />
+                <Route path="/app/reports" component={ReportsPage} />
+                <Route path="/app/voice" component={VoiceInboxPage} />
+                <Route path="/app/voice/record" component={RecorderPage} />
+                <Route path="/app/voice/settings" component={VoiceInboxPage} />
+                <Route path="/app/voice/:id" component={VoiceDetailPage} />
+                <Route
+                  path="/app/settings/:section?"
+                  component={SettingsPage}
+                />
+                <Route>
+                  <EmptyState
+                    title="Page not found"
+                    text="This part of the workspace does not exist."
+                    action={
+                      <Link href="/app">
+                        <Btn>Go to the dashboard</Btn>
+                      </Link>
+                    }
+                  />
+                </Route>
+              </Switch>
+            </Suspense>
           )}
         </main>
       </div>
 
       <nav className="mobile-nav" aria-label="Quick navigation">
-        {visible.filter(item =>
-          ["Dashboard", "My day", "Notes", "Rostering", "Clients"].includes(
-            item.name
+        {visible
+          .filter(item =>
+            ["Dashboard", "My day", "Notes", "Rostering", "Clients"].includes(
+              item.name
+            )
           )
-        ).map(({ name: label, icon: Icon, href, active }) => (
-          <Link
-            key={label}
-            href={href}
-            className={active(path) ? "active" : ""}
-            aria-current={active(path) ? "page" : undefined}
-          >
-            <Icon />
-            <span>{label === "Organisation files" ? "Files" : label}</span>
-          </Link>
-        ))}
+          .map(({ name: label, icon: Icon, href, active }) => (
+            <Link
+              key={label}
+              href={href}
+              className={active(path) ? "active" : ""}
+              aria-current={active(path) ? "page" : undefined}
+            >
+              <Icon />
+              <span>{label === "Organisation files" ? "Files" : label}</span>
+            </Link>
+          ))}
       </nav>
 
       {mobileMenu && (

@@ -36,6 +36,7 @@ import {
 } from "@/components/app/ui";
 import BudgetManager from "@/features/budgets/BudgetManager";
 import DocumentLibrary from "@/features/documents/DocumentLibrary";
+import { ParticipantNotes } from "@/features/records/NotesBrowser";
 import { prettyDate } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
 import ParticipantFormDrawer from "./ParticipantFormDrawer";
@@ -447,61 +448,7 @@ export default function ClientProfilePage() {
             </div>
           )}
           {tab === "notes" && (
-            <div className="space-y-3">
-              {clientRecords.length ? (
-                clientRecords.map(record => (
-                  <article
-                    key={record.id}
-                    className="rounded-md border border-[#e7ece9] bg-white p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-xs font-semibold text-[#344854]">
-                          {record.type} · {prettyDate(record.date)}
-                        </div>
-                        <div className="mt-1 text-[10px] text-[#87949a]">
-                          {record.id} · {record.staffName}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Status value={record.status} />
-                        <Link
-                          href={`/app/records/${record.id}`}
-                          className="text-[10px] font-semibold text-[#277c76]"
-                        >
-                          Open note
-                        </Link>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-xs leading-5 text-[#586b73]">
-                      {record.support || "Progress note not started."}
-                    </p>
-                    {record.outcome && (
-                      <p className="mt-2 text-[10px] text-[#7c8a90]">
-                        Goal / outcome: {record.outcome}
-                      </p>
-                    )}
-                  </article>
-                ))
-              ) : (
-                <EmptyState
-                  title="No progress notes yet"
-                  text="Progress notes created for this client will appear here."
-                  action={
-                    active ? (
-                      <Btn
-                        onClick={() =>
-                          navigate(`/app/records/new?clientId=${client.id}`)
-                        }
-                      >
-                        <Plus size={14} />
-                        Create progress note
-                      </Btn>
-                    ) : undefined
-                  }
-                />
-              )}
-            </div>
+            <ParticipantNotes clientId={client.id} active={active} />
           )}
           {tab === "budget" && <BudgetManager participant={client} />}
           {tab === "documents" && <DocumentLibrary participant={client} />}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { NotificationDTO, NotificationsDTO } from "@shared/dto";
 import type { AccessModule } from "@shared/enums";
 import { formatMoney } from "@shared/logic/money";
+import { HEALTH_ALERTS, INCIDENT_ALERTS } from "@shared/logic/progress-note";
 import { addDays, prettyDate, zonedStartOfDay } from "@shared/logic/time";
 import { parse, requireAuth } from "../../lib/http";
 import { workspaceTimezone, workspaceToday } from "../../lib/workspace";
@@ -49,6 +50,8 @@ const NOTIFICATION_MODULE: Record<
 > = {
   record_returned: "clients",
   review_pending: "clients",
+  note_flagged: "clients",
+  note_amendment: "clients",
   drafts_stale: "clients",
   plan_ending: "clients",
   budget_alert: "clients",
@@ -153,6 +156,46 @@ export async function notificationsFor(
         at: dayStart(today),
       });
     }
+    // A health concern or an incident on a note is escalated here until someone has reviewed it.
+    const attention = {
+      status: "Submitted" as const,
+      $or: [
+        { health: { $in: HEALTH_ALERTS } },
+        { incident: { $in: INCIDENT_ALERTS } },
+      ],
+    };
+    const [flagged, latestFlagged, requests] = await Promise.all([
+      ServiceRecord.countDocuments(attention),
+      ServiceRecord.findOne(attention)
+        .sort({ submittedAt: -1 })
+        .select("submittedAt updatedAt")
+        .lean<ServiceRecordDoc>(),
+      ServiceRecord.countDocuments({ "amendmentRequests.status": "Open" }),
+    ]);
+    if (flagged)
+      items.push({
+        key: `note-flagged:${flagged}:${latestFlagged?._id ?? ""}`,
+        type: "note_flagged",
+        severity: "warning",
+        title: "Health concern or incident on a note",
+        message: `${flagged} submitted progress note${flagged === 1 ? " flags" : "s flag"} a health concern, a follow-up or an incident.`,
+        link: "/app/progress-notes?flag=attention",
+        at: (
+          latestFlagged?.submittedAt ??
+          latestFlagged?.updatedAt ??
+          new Date()
+        ).toISOString(),
+      });
+    if (requests)
+      items.push({
+        key: `note-requests:${requests}`,
+        type: "note_amendment",
+        severity: "info",
+        title: "Amendment requested",
+        message: `${requests} progress note${requests === 1 ? " has" : "s have"} an amendment request waiting.`,
+        link: "/app/progress-notes?flag=requests",
+        at: dayStart(today),
+      });
   }
   if (enabled("budgetAlerts")) {
     const ending = await Participant.find({
@@ -291,9 +334,7 @@ export async function notificationsFor(
         severity: overdue ? "warning" : "info",
         title: overdue ? "Feedback past its due date" : "New feedback",
         message: [
-          unacknowledged
-            ? `${unacknowledged} not acknowledged yet`
-            : "",
+          unacknowledged ? `${unacknowledged} not acknowledged yet` : "",
           overdue ? `${overdue} overdue` : "",
         ]
           .filter(Boolean)

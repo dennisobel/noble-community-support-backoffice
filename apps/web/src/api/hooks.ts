@@ -37,6 +37,8 @@ import type {
   MessageOptionsDTO,
   MetaDTO,
   MyDayDTO,
+  HandoverNoteDTO,
+  NotesOverviewDTO,
   NoteDTO,
   NoteLabelDTO,
   NoteSummaryDTO,
@@ -103,6 +105,8 @@ import type {
   PayAdjustmentInput,
   PaySettingsInput,
   PreferencesPatchInput,
+  NotesOverviewQuery,
+  RecordAmendInput,
   RecordCreateInput,
   RecordUpdateInput,
   ServiceCreateInput,
@@ -285,7 +289,8 @@ export const useDeleteService = () =>
 /* ───────────── Participants ───────────── */
 
 export const useParticipants = (
-  params: { status?: string; q?: string; limit?: number } = {}
+  params: { status?: string; q?: string; limit?: number } = {},
+  options: { enabled?: boolean } = {}
 ) =>
   useQuery({
     queryKey: ["participants", params],
@@ -295,6 +300,7 @@ export const useParticipants = (
         clean({ limit: 200, ...params })
       ),
     placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
   });
 export const useParticipant = (id: string | undefined) =>
   useQuery({
@@ -347,6 +353,8 @@ export interface RecordQuery {
   q?: string;
   from?: string;
   to?: string;
+  /** "amended", "attention" (a health concern or incident) or "requests" (an amendment asked for). */
+  flag?: string;
   sort?: string;
   page?: number;
   limit?: number;
@@ -426,19 +434,55 @@ export const useDeleteRecord = () =>
     (id: string) => api.delete(`/service-records/${id}`),
     RECORD_GROUPS
   );
+/** Corrects a submitted note. The server keeps what each section said before, with the reason. */
+export const useAmendRecord = () =>
+  useApiMutation(
+    ({ id, ...input }: RecordAmendInput & { id: string }) =>
+      api.post<ServiceRecordDTO>(`/service-records/${id}/amend`, input),
+    RECORD_GROUPS
+  );
+export const useDeclineAmendment = () =>
+  useApiMutation(
+    ({
+      id,
+      requestId,
+      note,
+    }: {
+      id: string;
+      requestId: string;
+      note?: string;
+    }) =>
+      api.post<ServiceRecordDTO>(
+        `/service-records/${id}/amendment-requests/${requestId}/decline`,
+        { note }
+      ),
+    RECORD_GROUPS
+  );
+export const useNotesOverview = (params: NotesOverviewQuery = {}) =>
+  useQuery({
+    // Under "records" so anything that changes a record refreshes the dashboard too.
+    queryKey: ["records", "overview", params],
+    queryFn: () =>
+      api.get<NotesOverviewDTO>("/service-records/overview", clean(params)),
+    placeholderData: keepPreviousData,
+  });
 
 /* ───────────── Roster ───────────── */
 
-export const useShifts = (params: {
-  from: string;
-  to: string;
-  ratio?: string;
-  clientId?: string;
-}) =>
+export const useShifts = (
+  params: {
+    from: string;
+    to: string;
+    ratio?: string;
+    clientId?: string;
+  },
+  options: { enabled?: boolean } = {}
+) =>
   useQuery({
     queryKey: ["shifts", params],
     queryFn: () => api.get<RosterShiftDTO[]>("/roster/shifts", clean(params)),
     placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
   });
 export const useShiftValidation = (
   draft: (ShiftCreateInput & { id?: string }) | null
@@ -963,6 +1007,30 @@ export const useSubmitPortalNote = () => {
   });
 };
 
+/** A submitted note is locked for the worker; this asks the office to correct it. */
+export const useRequestAmendment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post<ServiceRecordDTO>(`/portal/notes/${id}/amendment-requests`, {
+        reason,
+      }),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["portal-notes"] }),
+  });
+};
+
+/** What the last workers wrote about a participant on this worker's roster. */
+export const usePortalHandover = (participantId: string | undefined) =>
+  useQuery({
+    queryKey: ["portal-handover", participantId],
+    queryFn: () =>
+      api.get<HandoverNoteDTO[]>(
+        `/portal/participants/${participantId}/handover`
+      ),
+    enabled: Boolean(participantId),
+    retry: false,
+  });
+
 /* Incident reports, ABC reports and the KM logbook. */
 function usePortalReports<T>(kind: string, params: object = {}) {
   return useQuery({
@@ -1403,7 +1471,9 @@ export const useUpdateNote = () => {
       api.patch<NoteDTO>(`/notes/${id}`, body),
     onSuccess: (saved, vars) => {
       qc.setQueryData(["note", saved.id], saved);
-      const lists = qc.getQueriesData<NoteSummaryDTO[]>({ queryKey: ["notes"] });
+      const lists = qc.getQueriesData<NoteSummaryDTO[]>({
+        queryKey: ["notes"],
+      });
       const unseen = lists.some(
         ([key, data]) =>
           !(key[1] as { q?: string; label?: string; archived?: boolean }).q &&
@@ -1597,8 +1667,7 @@ const usePortalMutation = <TVars, TResult>(
   return useMutation({
     mutationFn,
     onSettled: () => {
-      for (const key of keys)
-        void qc.invalidateQueries({ queryKey: [key] });
+      for (const key of keys) void qc.invalidateQueries({ queryKey: [key] });
     },
   });
 };
@@ -1855,10 +1924,7 @@ export const useUpdateFeedbackAction = () =>
       actionId: string;
       done?: boolean;
     }) =>
-      api.patch<FeedbackCaseDTO>(
-        `/feedback/${id}/actions/${actionId}`,
-        input
-      ),
+      api.patch<FeedbackCaseDTO>(`/feedback/${id}/actions/${actionId}`, input),
     ["feedback"]
   );
 export const useRemoveFeedbackAction = () =>
@@ -1879,8 +1945,7 @@ export const useFeedbackForm = () =>
 export const usePublicFeedbackForm = (token: string | undefined) =>
   useQuery({
     queryKey: ["public-feedback", token],
-    queryFn: () =>
-      api.get<PublicFeedbackFormDTO>(`/public/feedback/${token}`),
+    queryFn: () => api.get<PublicFeedbackFormDTO>(`/public/feedback/${token}`),
     enabled: Boolean(token),
     retry: false,
     refetchOnWindowFocus: false,

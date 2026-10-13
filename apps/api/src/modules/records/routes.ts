@@ -1,6 +1,9 @@
 import { Router, type Request } from "express";
 import {
+  amendmentDeclineSchema,
   billablesAdjustSchema,
+  notesOverviewQuery,
+  recordAmendSchema,
   recordCountsQuery,
   recordCreateSchema,
   recordListQuery,
@@ -8,15 +11,21 @@ import {
   recordUpdateSchema,
 } from "@shared/schemas/records";
 import { revOnly } from "@shared/schemas/common";
-import { ctx, parse } from "../../lib/http";
-import { codeParam } from "../../lib/mappers";
+import { contentDisposition, ctx, parse } from "../../lib/http";
+import { codeParam, objectIdParam } from "../../lib/mappers";
+import {
+  amendRecord,
+  declineAmendmentRequest,
+  getRecordDetail,
+  notesOverview,
+  recordPdf,
+} from "./notes";
 import {
   adjustBillables,
   approveRecord,
   countRecords,
   createRecord,
   deleteRecord,
-  getRecord,
   listRecords,
   returnRecord,
   submitRecord,
@@ -33,14 +42,52 @@ export function recordsRouter(): Router {
   router.get("/counts", async (req, res) => {
     res.json(await countRecords(parse(recordCountsQuery, req.query).clientId));
   });
+  /* Progress notes dashboard: what was written today, what is missing, what needs a person. */
+  router.get("/overview", async (req, res) => {
+    res.json(await notesOverview(parse(notesOverviewQuery, req.query)));
+  });
   router.post("/", async (req, res) => {
     res
       .status(201)
       .json(await createRecord(parse(recordCreateSchema, req.body), ctx(req)));
   });
   router.get("/:id", async (req, res) => {
-    res.json(await getRecord(recordId(req)));
+    res.json(await getRecordDetail(recordId(req)));
   });
+  /* The note as a PDF. Only for a signed-in person who may read the record; each export is logged. */
+  router.get("/:id/pdf", async (req, res) => {
+    const { filename, buffer } = await recordPdf(recordId(req), ctx(req));
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      contentDisposition(req.query.download ? "attachment" : "inline", filename)
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(buffer);
+  });
+  /* A submitted note is corrected through an amendment, which keeps what it replaced and why. */
+  router.post("/:id/amend", async (req, res) => {
+    res.json(
+      await amendRecord(
+        recordId(req),
+        parse(recordAmendSchema, req.body),
+        ctx(req)
+      )
+    );
+  });
+  router.post(
+    "/:id/amendment-requests/:requestId/decline",
+    async (req, res) => {
+      res.json(
+        await declineAmendmentRequest(
+          recordId(req),
+          objectIdParam(req, "requestId", "Amendment request"),
+          parse(amendmentDeclineSchema, req.body ?? {}),
+          ctx(req)
+        )
+      );
+    }
+  );
   router.patch("/:id", async (req, res) => {
     res.json(
       await updateRecord(

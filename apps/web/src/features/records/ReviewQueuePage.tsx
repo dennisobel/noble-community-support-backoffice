@@ -36,6 +36,7 @@ import {
 } from "@/components/app/ui";
 import { formatDateTime, money, prettyDate } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
+import { NoteFlags, noteLines } from "./NoteForm";
 
 function ReviewDrawer({
   recordId,
@@ -153,7 +154,10 @@ function ReviewDrawer({
                   {record.end}
                 </div>
               </div>
-              <Status value={record.status} />
+              <span className="flex flex-wrap items-center justify-end gap-1.5">
+                <NoteFlags record={record} />
+                <Status value={record.status} />
+              </span>
             </div>
             {record.correction && (
               <div className="rounded-md border border-[#efd6a7] bg-[#fff7e7] p-3 text-xs text-[#846222]">
@@ -180,20 +184,19 @@ function ReviewDrawer({
               </div>
             </div>
             <div className="space-y-3">
-              {[
-                ["Support provided", record.support],
-                ["Participant response", record.response],
-                ["Goal / outcome", record.outcome],
-                ["Observations", record.observations],
-                ["Follow-up", record.followUp],
-              ].map(([label, value]) => (
+              {noteLines(record).map(([label, value]) => (
                 <div key={label}>
                   <div className="label">{label}</div>
                   <p className="whitespace-pre-line text-xs leading-5 text-[#53666e]">
-                    {value || "No details provided."}
+                    {value}
                   </p>
                 </div>
               ))}
+              {!noteLines(record).length && (
+                <p className="text-xs text-[#87949a]">
+                  The progress note has not been written yet.
+                </p>
+              )}
             </div>
             <Panel title="Billable breakdown">
               <div className="space-y-3 p-4">

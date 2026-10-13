@@ -15,6 +15,7 @@ import { Link, useParams } from "wouter";
 import type { PortalShiftDTO } from "@shared/dto";
 import {
   useActiveTracking,
+  usePortalHandover,
   usePortalShift,
   useStartTracking,
   useStopTracking,
@@ -115,6 +116,38 @@ function ParticipantCard({
         </dl>
       )}
     </div>
+  );
+}
+
+/** What the last notes about a participant handed over, so the worker starts the shift informed. */
+function Handover({ id, name }: { id: string; name: string }) {
+  const handover = usePortalHandover(id);
+  const notes = (handover.data ?? []).filter(
+    note => note.followUp.trim() || note.healthDetails.trim()
+  );
+  if (!notes.length) return null;
+  return (
+    <Section title={`Handover for ${name}`}>
+      <div className="space-y-2">
+        {notes.map(note => (
+          <div key={note.id} className="portal-card">
+            <small className="block text-[10.5px] font-bold text-[#7a888d]">
+              {prettyDate(note.date)} · {note.staffName} · {note.type}
+            </small>
+            {note.followUp.trim() && (
+              <p className="mt-1 whitespace-pre-line text-[12px] leading-5 text-[#24363f]">
+                {note.followUp}
+              </p>
+            )}
+            {note.healthDetails.trim() && (
+              <p className="mt-1.5 rounded-lg bg-[#fdf1e3] px-2.5 py-1.5 text-[11px] leading-4 text-[#8a5a22]">
+                <b>Health:</b> {note.healthDetails}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 
@@ -317,6 +350,10 @@ export default function PortalShiftPage() {
           <Empty>No participants on this shift.</Empty>
         )}
       </Section>
+
+      {data.participants.map(person => (
+        <Handover key={person.id} id={person.id} name={person.preferred} />
+      ))}
 
       <Section title="Shift notes">
         <label className="portal-field">

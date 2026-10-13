@@ -423,6 +423,19 @@ async function populate(
   }
   const serviceRow = (key: ServiceKey) =>
     SERVICES.find(row => row.key === key)!;
+  /** The boxes a worker would tick on the progress note for each kind of service. */
+  const supportTypesFor = (key: ServiceKey) => {
+    const row = serviceRow(key);
+    const name = row.name.toLowerCase();
+    const kinds = name.includes("daily living")
+      ? (["Household tasks", "Personal care and ADLs"] as const)
+      : name.includes("coordination") || name.includes("review")
+        ? (["Other support"] as const)
+        : (["Community access", "Social and recreational activities"] as const);
+    return row.transport
+      ? [...kinds, "Transport assistance" as const]
+      : [...kinds];
+  };
 
   /* ── Clients. A renewed plan keeps the plan it replaced as history ── */
   log("Adding clients…");
@@ -648,10 +661,13 @@ async function populate(
         .replaceAll("{loc}", location)
         .replaceAll("{goal}", seed.goals[0] ?? "the goals in the support plan");
     const notes = {
+      supportTypes: supportTypesFor(service),
       support: fill(script.support),
-      response: fill(script.response),
+      summary: `${fill(script.response)}\n\n${fill(pick(random, script.observations))}`,
+      goals: seed.goals.slice(0, 1),
       outcome: fill(script.outcome),
-      observations: fill(pick(random, script.observations)),
+      health: ["No concerns" as const],
+      incident: ["No incident" as const],
       followUp: fill(pick(random, script.followUp)),
     };
     const km = serviceRow(service).transport
@@ -727,11 +743,13 @@ async function populate(
       "{goal}",
       seed.goals[0] ?? "the support plan"
     );
+    // The sample corrections name the old boxes; the response and observations are now the summary.
+    const corrected = returned.field === "outcome" ? "outcome" : "summary";
     await stamped(fixAt, ["records"], () =>
       updateRecord(
         record.id,
         recordUpdateSchema.parse({
-          [returned.field]: `${notes[returned.field]} ${addition}`,
+          [corrected]: `${notes[corrected]} ${addition}`,
         }),
         workerCtx
       )

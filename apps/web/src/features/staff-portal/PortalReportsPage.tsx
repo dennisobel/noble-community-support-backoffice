@@ -1,6 +1,6 @@
 import { ChevronRight, Plus, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useSearch } from "wouter";
 import {
   ABC_BEHAVIOURS,
   INCIDENT_CATEGORIES,
@@ -170,7 +170,13 @@ export default function PortalReportsPage() {
   const params = useParams<{ section?: string }>();
   const section = (SECTIONS.find(item => item.key === params.section)?.key ??
     "incidents") as Section;
-  const [adding, setAdding] = useState(false);
+  // A progress note that flags an incident links here with the shift and participant already known.
+  const search = new URLSearchParams(useSearch());
+  const preset = {
+    shiftId: search.get("shiftId") ?? "",
+    participantId: search.get("participantId") ?? "",
+  };
+  const [adding, setAdding] = useState(search.get("new") === "1");
 
   return (
     <>
@@ -192,10 +198,14 @@ export default function PortalReportsPage() {
       </div>
 
       {section === "incidents" && (
-        <IncidentsSection adding={adding} setAdding={setAdding} />
+        <IncidentsSection
+          adding={adding}
+          setAdding={setAdding}
+          preset={preset}
+        />
       )}
       {section === "abc" && (
-        <AbcSection adding={adding} setAdding={setAdding} />
+        <AbcSection adding={adding} setAdding={setAdding} preset={preset} />
       )}
       {section === "logbook" && (
         <LogbookSection adding={adding} setAdding={setAdding} />
@@ -219,9 +229,11 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 function IncidentsSection({
   adding,
   setAdding,
+  preset,
 }: {
   adding: boolean;
   setAdding: (value: boolean) => void;
+  preset: { shiftId: string; participantId: string };
 }) {
   const list = usePortalIncidents();
   const { create } = useIncidentMutations();
@@ -229,8 +241,8 @@ function IncidentsSection({
   const today = todayIn(DEFAULT_TIMEZONE);
   const [problem, setProblem] = useState("");
   const [form, setForm] = useState({
-    shiftId: "",
-    participantId: "",
+    shiftId: preset.shiftId,
+    participantId: preset.participantId,
     date: today,
     time: nowTime(),
     location: "",
@@ -474,9 +486,11 @@ function IncidentsSection({
 function AbcSection({
   adding,
   setAdding,
+  preset,
 }: {
   adding: boolean;
   setAdding: (value: boolean) => void;
+  preset: { shiftId: string; participantId: string };
 }) {
   const list = usePortalAbc();
   const { create } = useAbcMutations();
@@ -484,8 +498,8 @@ function AbcSection({
   const today = todayIn(DEFAULT_TIMEZONE);
   const [problem, setProblem] = useState("");
   const [form, setForm] = useState({
-    shiftId: "",
-    participantId: "",
+    shiftId: preset.shiftId,
+    participantId: preset.participantId,
     date: today,
     time: nowTime(),
     location: "",

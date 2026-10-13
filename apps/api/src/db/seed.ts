@@ -423,7 +423,15 @@ export async function seedDemo(
     outcome: string,
     observations: string,
     followUp: string
-  ) => ({ support, response, outcome, observations, followUp });
+  ) => ({
+    supportTypes: ["Community access"],
+    support,
+    summary: `${response}\n\n${observations}`,
+    outcome,
+    health: ["No concerns"],
+    incident: ["No incident"],
+    followUp,
+  });
   const invoiceIssue = addDays(today, -10);
   const invoiceId = `INV-${invoiceIssue.slice(0, 4)}-091`;
   const jordan = { id: String(staff.s1), name: "Jordan Lee" };

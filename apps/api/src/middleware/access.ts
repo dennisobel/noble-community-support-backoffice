@@ -28,6 +28,13 @@ export const ACCESS_RULES: AccessRule[] = [
   { prefix: "/settings/workspace", open: "read" },
   // One module each
   { prefix: "/dashboard", full: ["dashboard"] },
+  // Whoever writes progress notes picks the rostered shift a note belongs to
+  {
+    prefix: "/roster/shifts",
+    exact: true,
+    full: ["roster"],
+    read: ["clients"],
+  },
   { prefix: "/roster", full: ["roster"] },
   { prefix: "/tracking", full: ["live"] },
   { prefix: "/invoices", full: ["invoices"] },
@@ -43,7 +50,11 @@ export const ACCESS_RULES: AccessRule[] = [
     full: ["clients"],
     read: ["roster", "invoices", "voice", "files"],
   },
-  { prefix: "/service-records", full: ["clients"], read: ["invoices", "voice"] },
+  {
+    prefix: "/service-records",
+    full: ["clients"],
+    read: ["invoices", "voice"],
+  },
   {
     prefix: "/services",
     full: ["services"],
@@ -69,8 +80,7 @@ export const ACCESS_RULES: AccessRule[] = [
 ];
 
 const matches = (rule: AccessRule, path: string) =>
-  path === rule.prefix ||
-  (!rule.exact && path.startsWith(`${rule.prefix}/`));
+  path === rule.prefix || (!rule.exact && path.startsWith(`${rule.prefix}/`));
 
 export function canCall(
   user: { role: string; modules: readonly AccessModule[] },

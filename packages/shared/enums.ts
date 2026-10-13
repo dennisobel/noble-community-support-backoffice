@@ -147,6 +147,46 @@ export const NOTE_SECTION_LABELS: Record<NoteSection, string> = {
   followUp: "Follow-up / action required",
 };
 
+/** What the worker did on the shift, ticked on a progress note. */
+export const SUPPORT_PROVIDED = [
+  "Community access",
+  "Transport assistance",
+  "Shopping and errands",
+  "Social and recreational activities",
+  "Personal care and ADLs",
+  "Household tasks",
+  "Medication prompting",
+  "Medical appointments",
+  "Other support",
+] as const;
+export type SupportProvided = (typeof SUPPORT_PROVIDED)[number];
+
+/** Health and wellbeing on a progress note. The first option means there is nothing to report. */
+export const HEALTH_FLAGS = [
+  "No concerns",
+  "Health concern identified",
+  "Medication support provided",
+  "Follow-up required",
+] as const;
+export type HealthFlag = (typeof HEALTH_FLAGS)[number];
+
+/** Incidents and behaviours of concern on a progress note. The first option means nothing happened. */
+export const INCIDENT_FLAGS = [
+  "No incident",
+  "Incident occurred",
+  "Behaviour of concern observed",
+] as const;
+export type IncidentFlag = (typeof INCIDENT_FLAGS)[number];
+
+/** A worker's request to have a submitted note corrected. */
+export const AMENDMENT_REQUEST_STATUSES = [
+  "Open",
+  "Applied",
+  "Declined",
+] as const;
+export type AmendmentRequestStatus =
+  (typeof AMENDMENT_REQUEST_STATUSES)[number];
+
 export const NOTE_TEMPLATES = [
   "Community support progress note",
   "Daily living skills note",
@@ -768,7 +808,11 @@ export type PayCode = (typeof PAY_CODES)[number];
 
 /* ───────────── Complaints & feedback ───────────── */
 
-export const FEEDBACK_KINDS = ["Complaint", "Compliment", "Suggestion"] as const;
+export const FEEDBACK_KINDS = [
+  "Complaint",
+  "Compliment",
+  "Suggestion",
+] as const;
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
 
 export const FEEDBACK_STATUSES = [
@@ -814,7 +858,12 @@ export type FeedbackArea = (typeof FEEDBACK_AREAS)[number];
 export const FEEDBACK_PRIORITIES = ["Low", "Medium", "High"] as const;
 export type FeedbackPriority = (typeof FEEDBACK_PRIORITIES)[number];
 
-export const FEEDBACK_SATISFACTION = ["Not asked", "Yes", "Partly", "No"] as const;
+export const FEEDBACK_SATISFACTION = [
+  "Not asked",
+  "Yes",
+  "Partly",
+  "No",
+] as const;
 export type FeedbackSatisfaction = (typeof FEEDBACK_SATISFACTION)[number];
 
 /**
@@ -837,7 +886,11 @@ export const CONVERSATION_KINDS = ["direct", "group", "announcement"] as const;
 export type ConversationKind = (typeof CONVERSATION_KINDS)[number];
 
 /** Who an announcement goes to. */
-export const ANNOUNCEMENT_AUDIENCES = ["everyone", "workers", "office"] as const;
+export const ANNOUNCEMENT_AUDIENCES = [
+  "everyone",
+  "workers",
+  "office",
+] as const;
 export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
 
 /** What a conversation can be about, so the thread opens beside the shift or client it concerns. */

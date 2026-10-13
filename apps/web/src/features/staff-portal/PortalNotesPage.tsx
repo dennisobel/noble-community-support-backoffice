@@ -1,4 +1,4 @@
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { RECORD_STATUSES } from "@shared/enums";
@@ -12,10 +12,28 @@ const FILTERS = ["All", ...RECORD_STATUSES] as const;
 /** Every progress note the worker has written, newest first. */
 export default function PortalNotesPage() {
   const [status, setStatus] = useState<(typeof FILTERS)[number]>("All");
-  const notes = usePortalNotes(status === "All" ? {} : { status });
+  const [q, setQ] = useState("");
+  const notes = usePortalNotes({
+    status: status === "All" ? undefined : status,
+    q: q.trim().length > 1 ? q.trim() : undefined,
+  });
 
   return (
     <>
+      <label className="relative mb-3 block">
+        <span className="sr-only">Search your notes</span>
+        <Search
+          size={14}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#93a0a4]"
+        />
+        <input
+          type="search"
+          className="h-10 w-full rounded-lg border border-[#dbe4e0] bg-white pl-9 pr-3 text-[13px] text-[#24363f]"
+          placeholder="Search by participant, date or what you wrote"
+          value={q}
+          onChange={event => setQ(event.target.value)}
+        />
+      </label>
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map(option => (
           <button
@@ -39,9 +57,11 @@ export default function PortalNotesPage() {
         <ErrorBlock error={notes.error} onRetry={() => void notes.refetch()} />
       ) : !notes.data.length ? (
         <Empty>
-          {status === "All"
-            ? "You haven't written any progress notes yet."
-            : `No ${status.toLowerCase()} notes.`}
+          {q.trim().length > 1
+            ? "No notes match that search."
+            : status === "All"
+              ? "You haven't written any progress notes yet."
+              : `No ${status.toLowerCase()} notes.`}
         </Empty>
       ) : (
         <div className="portal-card !p-0">
@@ -57,6 +77,7 @@ export default function PortalNotesPage() {
                     {note.clientName}
                   </b>
                   <Chip tone={toneFor(note.status)}>{note.status}</Chip>
+                  {note.amended && <Chip tone="info">Amended</Chip>}
                 </span>
                 <small className="mt-0.5 block text-[11px] text-[#7a888d]">
                   {prettyDate(note.date)} · {note.type} · {note.hours} hr

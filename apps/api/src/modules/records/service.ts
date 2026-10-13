@@ -3,7 +3,6 @@ import type { z } from "zod";
 import type { Paginated, RecordCountsDTO, ServiceRecordDTO } from "@shared/dto";
 import {
   NOTE_SECTIONS,
-  NOTE_SECTION_LABELS,
   RECORD_STATUSES,
   type NoteSection,
 } from "@shared/enums";
@@ -18,6 +17,14 @@ import {
   toCents,
 } from "@shared/logic/money";
 import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
+import {
+  HEALTH_ALERTS,
+  INCIDENT_ALERTS,
+  NOTE_FIELDS,
+  noteNeedsAttention,
+  noteProblems,
+  type NoteContent,
+} from "@shared/logic/progress-note";
 import { durationHours } from "@shared/logic/time";
 import { MESSAGES } from "@shared/messages";
 import type {
@@ -79,10 +86,33 @@ export async function staffLookup(
   return new Map(docs.map(doc => [String(doc._id), doc]));
 }
 
+/** The progress note as it reads now. A note from before the shift summary was one box reads its two old boxes as one. */
+export function noteContentOf(record: ServiceRecordDoc): NoteContent {
+  return {
+    supportTypes: record.supportTypes ?? [],
+    support: record.support ?? "",
+    summary: record.summary?.trim()
+      ? record.summary
+      : [record.response, record.observations]
+          .filter(part => part?.trim())
+          .join("\n\n"),
+    goals: record.goals ?? [],
+    outcome: record.outcome ?? "",
+    achievements: record.achievements ?? "",
+    health: record.health ?? [],
+    healthDetails: record.healthDetails ?? "",
+    incident: record.incident ?? [],
+    incidentDetails: record.incidentDetails ?? "",
+    followUp: record.followUp ?? "",
+  };
+}
+
 export function toRecordDTO(
   record: ServiceRecordDoc,
   lookups: Lookups
 ): ServiceRecordDTO {
+  const note = noteContentOf(record);
+  const amendments = record.amendments ?? [];
   const participant = lookups.participants.get(String(record.clientId));
   const staff = lookups.staff.get(String(record.staffId));
   return {
@@ -101,11 +131,32 @@ export function toRecordDTO(
     end: record.end,
     hours: durationHours(record.start, record.end),
     location: record.location ?? "",
-    support: record.support ?? "",
-    response: record.response ?? "",
-    outcome: record.outcome ?? "",
-    observations: record.observations ?? "",
-    followUp: record.followUp ?? "",
+    ...note,
+    attention: noteNeedsAttention(note),
+    amended: amendments.length > 0,
+    amendments: amendments.map(amendment => ({
+      id: amendment.id,
+      at: isoRequired(amendment.at),
+      by: actorDTO(amendment.by),
+      reason: amendment.reason,
+      requestId: amendment.requestId ?? null,
+      changes: (amendment.changes ?? []).map(change => ({
+        field: change.field,
+        label: change.label,
+        before: change.before ?? "",
+        after: change.after ?? "",
+      })),
+    })),
+    amendmentRequests: (record.amendmentRequests ?? []).map(request => ({
+      id: request.id,
+      at: isoRequired(request.at),
+      by: actorDTO(request.by),
+      reason: request.reason,
+      status: request.status,
+      resolvedAt: iso(request.resolvedAt),
+      resolvedBy: actorDTO(request.resolvedBy),
+      resolution: request.resolution ?? "",
+    })),
     km: record.km ?? 0,
     quantity: record.quantity ?? null,
     confirmed: Boolean(record.confirmed),
@@ -299,6 +350,23 @@ async function voiceDraftSections(
   return sections;
 }
 
+const SPENT_SUMMARY = { response: "", observations: "" };
+
+/** A recording's draft has five sections; the note takes "response" and "observations" as its one summary. */
+export function noteFromDraft(
+  draft: Partial<Record<NoteSection, string>>
+): Partial<NoteContent> & Partial<typeof SPENT_SUMMARY> {
+  const summary = [draft.response, draft.observations]
+    .filter(Boolean)
+    .join("\n\n");
+  return {
+    ...(draft.support ? { support: draft.support } : {}),
+    ...(summary ? { summary, ...SPENT_SUMMARY } : {}),
+    ...(draft.outcome ? { outcome: draft.outcome } : {}),
+    ...(draft.followUp ? { followUp: draft.followUp } : {}),
+  };
+}
+
 /* ───────────── Queries ───────────── */
 
 const SORTS: Record<string, Record<string, 1 | -1>> = {
@@ -322,6 +390,16 @@ export async function listRecords(
     });
   if (query.from) and.push({ date: { $gte: query.from } });
   if (query.to) and.push({ date: { $lte: query.to } });
+  if (query.flag === "amended") and.push({ "amendments.0": { $exists: true } });
+  if (query.flag === "requests")
+    and.push({ "amendmentRequests.status": "Open" });
+  if (query.flag === "attention")
+    and.push({
+      $or: [
+        { health: { $in: HEALTH_ALERTS } },
+        { incident: { $in: INCIDENT_ALERTS } },
+      ],
+    });
   if (query.q) {
     const pattern = new RegExp(escapeRegex(query.q), "i");
     const [participantIds, staffIds] = await Promise.all([
@@ -336,6 +414,10 @@ export async function listRecords(
         { type: pattern },
         { location: pattern },
         { date: pattern },
+        { summary: pattern },
+        { support: pattern },
+        { outcome: pattern },
+        { followUp: pattern },
         { clientId: { $in: participantIds } },
         { staffId: { $in: staffIds } },
       ],
@@ -423,10 +505,16 @@ export async function createRecord(
           location: input.location ?? "",
           km,
           quantity,
+          supportTypes: input.supportTypes ?? [],
           support: input.support ?? "",
-          response: input.response ?? "",
+          summary: input.summary ?? "",
+          goals: input.goals ?? [],
           outcome: input.outcome ?? "",
-          observations: input.observations ?? "",
+          achievements: input.achievements ?? "",
+          health: input.health ?? [],
+          healthDetails: input.healthDetails ?? "",
+          incident: input.incident ?? [],
+          incidentDetails: input.incidentDetails ?? "",
           followUp: input.followUp ?? "",
           confirmed: Boolean(input.confirmed),
           confirmedAt: input.confirmed ? now : null,
@@ -528,10 +616,12 @@ export async function updateRecord(
     "start",
     "end",
     "location",
-    ...NOTE_SECTIONS,
+    ...NOTE_FIELDS,
   ] as const) {
     if (input[key] !== undefined) $set[key] = input[key];
   }
+  // Once the summary is saved as one box, the two old boxes it was read from are spent.
+  if (input.summary !== undefined) Object.assign($set, SPENT_SUMMARY);
   if (input.confirmed !== undefined) {
     $set.confirmed = input.confirmed;
     $set.confirmedAt = input.confirmed
@@ -550,7 +640,7 @@ export async function updateRecord(
 
   const notes: HistorySub[] = [];
   if (input.applyVoiceDraft && nextVoiceId) {
-    Object.assign($set, await voiceDraftSections(nextVoiceId));
+    Object.assign($set, noteFromDraft(await voiceDraftSections(nextVoiceId)));
     notes.push(
       historyEntry(
         ctx.actor,
@@ -620,16 +710,9 @@ export async function submitRecord(
     throw errors.validation(MESSAGES.declaration, [
       { path: "confirmed", message: MESSAGES.declaration },
     ]);
-  const missing = NOTE_SECTIONS.filter(section => !current[section]?.trim());
-  if (missing.length) {
-    throw errors.validation(
-      MESSAGES.incompleteNote,
-      missing.map(section => ({
-        path: section,
-        message: `${NOTE_SECTION_LABELS[section]} is required.`,
-      }))
-    );
-  }
+  const problems = noteProblems(noteContentOf(current));
+  if (problems.length)
+    throw errors.validation(MESSAGES.incompleteNote, problems);
   const service = await getService(current.serviceId);
   if (
     service.unit === "Hour" &&

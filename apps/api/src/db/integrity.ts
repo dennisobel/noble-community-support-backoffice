@@ -1,5 +1,4 @@
 import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
-import { NOTE_SECTIONS } from "@shared/enums";
 import { computeBillables } from "@shared/logic/billing";
 import { computeBudgetMetrics } from "@shared/logic/budget";
 import { findOverlaps, ratioError } from "@shared/logic/roster";
@@ -346,11 +345,14 @@ export async function checkIntegrity(): Promise<IntegrityReport> {
         problem(
           `${label} is ${record.status.toLowerCase()} without the staff declaration.`
         );
-      for (const section of NOTE_SECTIONS)
-        if (!record[section]?.trim())
-          problem(
-            `${label} is ${record.status.toLowerCase()} but its "${section}" note is empty.`
-          );
+      if (
+        ![record.summary, record.response, record.observations].some(part =>
+          part?.trim()
+        )
+      )
+        problem(
+          `${label} is ${record.status.toLowerCase()} but its shift summary is empty.`
+        );
     }
     if (submitted && !record.billablesFrozenAt)
       problem(

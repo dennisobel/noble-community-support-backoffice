@@ -21,6 +21,7 @@ import {
   portalShiftQuery,
 } from "@shared/schemas/staff-portal";
 import { revOnly } from "@shared/schemas/common";
+import { amendmentRequestSchema } from "@shared/schemas/records";
 import { payPeriodQuery } from "@shared/schemas/payroll";
 import {
   availabilitySchema,
@@ -72,6 +73,8 @@ import {
   createPortalNote,
   getPortalNote,
   listPortalNotes,
+  portalHandover,
+  requestPortalAmendment,
   submitPortalNote,
   updatePortalNote,
 } from "./notes";
@@ -377,6 +380,22 @@ export function portalRouter(): Router {
         parse(portalNoteUpdateSchema, req.body),
         ctx(req)
       )
+    );
+  });
+  router.post("/notes/:id/amendment-requests", async (req, res) => {
+    res.json(
+      await requestPortalAmendment(
+        me(req),
+        codeParam(req, "SR", "Service record"),
+        parse(amendmentRequestSchema, req.body),
+        ctx(req)
+      )
+    );
+  });
+  /* What the last worker wrote about a participant on this worker's roster. */
+  router.get("/participants/:id/handover", async (req, res) => {
+    res.json(
+      await portalHandover(me(req), objectIdParam(req, "id", "Participant"))
     );
   });
   router.post("/notes/:id/submit", async (req, res) => {

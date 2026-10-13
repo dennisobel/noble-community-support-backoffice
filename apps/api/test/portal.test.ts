@@ -242,10 +242,12 @@ describe("a worker's day", () => {
     const filled = await worker
       .patch(`${API}/portal/notes/${draft.body.id}`)
       .send({
+        supportTypes: ["Community access", "Shopping and errands"],
         support: "Supported Mia with community access and shopping.",
-        response: "Settled and engaged throughout.",
+        summary: "Settled and engaged throughout.",
         outcome: "Practised making choices in the community.",
-        observations: "No concerns.",
+        health: ["No concerns"],
+        incident: ["No incident"],
         followUp: "Bring the meal-planning worksheet next time.",
         confirmed: true,
         rev: draft.body.rev,

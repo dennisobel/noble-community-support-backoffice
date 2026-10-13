@@ -168,6 +168,16 @@ Anyone who is not the first Admin asks for access from the **Request access** li
 
 A personal notebook for every signed-in person, in the back office (**Notes**) and in the worker portal (**Notebook**). It is built phone-first: a big + button, a full-screen note with the formatting bar above the keyboard, and notes that save themselves. Notes have bold, italic, underline, headings, bullet/numbered lists, checklists, quotes, links and pictures (phone photos are shrunk before upload), plus labels, pinning, archive and search. Typing `- `, `[ ] ` or `# ` at the start of a line works like Notion. Notes are private: not even an Admin can read someone else's. The voice notes feature is unchanged. Code: [apps/api/src/modules/notes/](apps/api/src/modules/notes/) and [apps/web/src/features/notes/](apps/web/src/features/notes/).
 
+## Progress notes
+
+A progress note is the written part of a service record: **Clients → a participant → Progress notes** holds that person's history, and the sidebar's **Progress notes** is the team leader's dashboard across everyone.
+
+- **The form** (the same in the back office and on a worker's phone): shift information from the roster, support provided (tick boxes and details), the shift summary, the participant's goals with progress and achievements, health and wellbeing, incidents and behaviours of concern, and handover. A health concern or an incident needs details before the note can be submitted. An incident never ends in the note: the form links to the incident and behaviour (ABC) reports, which stay the formal record.
+- **Draft, submit, amend.** A draft is edited freely. A submitted note is locked: a worker asks for an amendment, and someone with the Clients module amends it with a reason. Each amendment keeps who made it, when, why and what every changed section said before. Only the written note can be amended; the shift, times and billing do not move, so an invoice never changes.
+- **Dashboard**: notes completed today, awaiting submission, missing (finished rostered shifts with no note, each with a _Write note_ link), awaiting review, flagging a health concern or incident, and amendment requests. Filters: participant, support worker, dates, status, and a search of what was written.
+- **Access.** Workers write notes only for participants on their own roster, and read the last notes about them as handover on the shift. Reviewing, amending and exporting follow the Clients module. The PDF export needs a session, is never public, and every export is written to the audit log.
+- Submitting a note sends it to the review queue. It does not approve a timesheet or create an invoice.
+
 ## Signatures
 
 Send a PDF out for signature without anyone needing an account. In **Signatures**, upload the PDF, add the people who sign (a client, a worker, a family member, or yourself), and click the pages to place their boxes: signature, date, text or checkbox. Sending gives each person their own private link (`/sign/<token>`), which you copy into a message or, when SMTP is set up, have emailed. The page they open explains what to do, walks them from box to box, and works on a phone: they draw or type a signature once, agree to sign electronically, and finish.

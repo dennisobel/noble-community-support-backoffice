@@ -5,8 +5,11 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Download,
   History,
   Info,
+  PenLine,
+  Printer,
   Sparkles,
   SquareArrowOutUpRight,
   Trash2,
@@ -15,23 +18,28 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams, useSearch } from "wouter";
 import { DEFAULT_TRAVEL_RATE_CENTS } from "@shared/const";
 import type { ServiceRecordDTO } from "@shared/dto";
-import {
-  NOTE_SECTIONS,
-  NOTE_SECTION_LABELS,
-  type NoteSection,
-} from "@shared/enums";
 import { computeBillables } from "@shared/logic/billing";
 import { fromCents, toCents } from "@shared/logic/money";
-import { MESSAGES } from "@shared/messages";
-import { ApiError, errorMessage } from "@/api/client";
 import {
+  EMPTY_NOTE,
+  NOTE_FIELDS,
+  noteProblems,
+  type NoteContent,
+} from "@shared/logic/progress-note";
+import { MESSAGES } from "@shared/messages";
+import type { RecordCreateInput } from "@shared/schemas/records";
+import { ApiError, downloadFile, errorMessage, openFile } from "@/api/client";
+import {
+  useAmendRecord,
   useCreateRecord,
+  useDeclineAmendment,
   useDeleteRecord,
   useMeta,
   useParticipants,
   useRecord,
   useRecordAction,
   useServices,
+  useShifts,
   useStaff,
   useUpdateRecord,
   useVoiceNote,
@@ -52,8 +60,9 @@ import {
 } from "@/components/app/ui";
 import { durationHours, formatDateTime, money, prettyDate } from "@/lib/format";
 import { useNotify } from "@/lib/notify";
+import { NoteFlags, NoteForm } from "./NoteForm";
 
-interface FormState {
+interface FormState extends NoteContent {
   clientId: string;
   staffId: string;
   serviceId: string;
@@ -65,20 +74,17 @@ interface FormState {
   quantity: string;
   confirmed: boolean;
   voiceNoteId: string;
-  support: string;
-  response: string;
-  outcome: string;
-  observations: string;
-  followUp: string;
+  /** The rostered shift this note is written against. Only chosen when the record is created. */
+  shiftId: string;
 }
 
-const HELP: Record<NoteSection, string> = {
-  support: "Record the concrete actions and support delivered.",
-  response: "Describe the participant’s response and choices.",
-  outcome: "Connect the support to a stated participant goal.",
-  observations: "Include relevant factual observations; avoid assumptions.",
-  followUp: "Record who will do what, and when.",
-};
+const noteOf = (source: NoteContent): NoteContent =>
+  Object.fromEntries(
+    NOTE_FIELDS.map(field => [field, source[field]])
+  ) as unknown as NoteContent;
+/** The same note as the API takes it: the ticked options are checked there against the fixed lists. */
+const noteInput = (source: NoteContent) =>
+  noteOf(source) as Pick<RecordCreateInput, keyof NoteContent>;
 
 function fromRecord(record: ServiceRecordDTO): FormState {
   return {
@@ -93,11 +99,8 @@ function fromRecord(record: ServiceRecordDTO): FormState {
     quantity: record.quantity === null ? "" : String(record.quantity),
     confirmed: record.confirmed,
     voiceNoteId: record.voiceId ?? "",
-    support: record.support,
-    response: record.response,
-    outcome: record.outcome,
-    observations: record.observations,
-    followUp: record.followUp,
+    shiftId: record.shiftId ?? "",
+    ...noteOf(record),
   };
 }
 
@@ -113,6 +116,9 @@ const ACTION_LABELS: Record<string, string> = {
   invoice_deleted: "Invoice draft deleted",
   invoice_voided: "Invoice voided",
   draft_applied: "AI-assisted draft applied",
+  amended: "Note amended",
+  amendment_requested: "Amendment requested",
+  amendment_declined: "Amendment request declined",
 };
 
 export default function RecordEditorPage() {
@@ -121,6 +127,9 @@ export default function RecordEditorPage() {
   const query = new URLSearchParams(useSearch());
   const presetClient = query.get("clientId") ?? undefined;
   const sourceVoiceId = query.get("voiceId") ?? undefined;
+  /** Coming from a shift that still needs its note: the shift and its day are already known. */
+  const presetShift = query.get("shiftId") ?? "";
+  const presetDate = query.get("date") ?? "";
   const [, navigate] = useLocation();
   const notify = useNotify();
 
@@ -135,6 +144,8 @@ export default function RecordEditorPage() {
   const update = useUpdateRecord();
   const action = useRecordAction();
   const remove = useDeleteRecord();
+  const amend = useAmendRecord();
+  const decline = useDeclineAmendment();
 
   const [form, setForm] = useState<FormState | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -142,8 +153,24 @@ export default function RecordEditorPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Correcting a submitted note: the note opens for editing, with a reason, and nothing else does. */
+  const [amending, setAmending] = useState(false);
+  const [reason, setReason] = useState("");
+  const [requestId, setRequestId] = useState("");
+  const [declining, setDeclining] = useState<{
+    id: string;
+    note: string;
+  } | null>(null);
   const record = recordQuery.data;
   const voiceNotes = useVoiceNotes({ clientId: form?.clientId, status: "all" });
+  const shifts = useShifts(
+    {
+      from: form?.date ?? "",
+      to: form?.date ?? "",
+      clientId: form?.clientId,
+    },
+    { enabled: !id && Boolean(form?.date && form?.clientId) }
+  );
 
   // Initialise the form from the record, or from sensible defaults for a new record.
   useEffect(() => {
@@ -172,7 +199,7 @@ export default function RecordEditorPage() {
       clientId: voice?.clientId ?? presetClient ?? activeClients[0]?.id ?? "",
       staffId: staff.data.find(member => member.status === "Active")?.id ?? "",
       serviceId: services.data.find(service => service.active)?.id ?? "",
-      date: meta.data.today,
+      date: presetDate || meta.data.today,
       start: "09:00",
       end: "11:00",
       location: "",
@@ -180,10 +207,14 @@ export default function RecordEditorPage() {
       quantity: "",
       confirmed: false,
       voiceNoteId: voice?.id ?? "",
+      shiftId: "",
+      ...EMPTY_NOTE,
+      // A recording's draft has five sections; its response and observations are the shift summary.
       support: draft?.support ?? "",
-      response: draft?.response ?? "",
+      summary: [draft?.response, draft?.observations]
+        .filter(Boolean)
+        .join("\n\n"),
       outcome: draft?.outcome ?? "",
-      observations: draft?.observations ?? "",
       followUp: draft?.followUp ?? "",
     });
     setLoadedFor("new");
@@ -201,7 +232,43 @@ export default function RecordEditorPage() {
     sourceVoice.data,
     sourceVoice.isError,
     presetClient,
+    presetDate,
   ]);
+
+  const shiftChoices = (shifts.data ?? []).filter(
+    shift => shift.status !== "Cancelled"
+  );
+  /** Takes the worker, service, times and place from the roster, so they are not typed twice. */
+  const applyShift = (shiftId: string) => {
+    const shift = shiftChoices.find(item => item.id === shiftId);
+    setForm(current =>
+      current
+        ? {
+            ...current,
+            shiftId,
+            ...(shift
+              ? {
+                  staffId: shift.staffIds[0] ?? current.staffId,
+                  serviceId: shift.serviceId,
+                  start: shift.start,
+                  end: shift.end,
+                  location: shift.location || current.location,
+                }
+              : {}),
+          }
+        : current
+    );
+    setDirty(true);
+  };
+  const presetReady =
+    !id &&
+    Boolean(presetShift) &&
+    form?.shiftId === "" &&
+    shiftChoices.some(shift => shift.id === presetShift);
+  useEffect(() => {
+    if (presetReady) applyShift(presetShift);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetReady]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -215,6 +282,7 @@ export default function RecordEditorPage() {
   const service = services.data?.find(item => item.id === form?.serviceId);
   const editable =
     !id || record?.status === "Draft" || record?.status === "Returned";
+  const noteOpen = editable || amending;
   const liveBillables = useMemo(() => {
     if (!form || !service) return [];
     return computeBillables(
@@ -284,10 +352,26 @@ export default function RecordEditorPage() {
     voice => voice.clientId === form.clientId
   );
   const linkedVoice = voiceChoices.find(voice => voice.id === form.voiceNoteId);
-  const busy = create.isPending || update.isPending || action.isPending;
+  const busy =
+    create.isPending || update.isPending || action.isPending || amend.isPending;
+  const participant = participants.data.items.find(
+    person => person.id === form.clientId
+  );
+  const openRequests = (record?.amendmentRequests ?? []).filter(
+    request => request.status === "Open"
+  );
   const backHref = `/app/clients/${form.clientId}/records`;
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm(current => (current ? { ...current, [key]: value } : current));
+    setDirty(true);
+    setFieldErrors(errors => ({ ...errors, [key]: "" }));
+  };
+
+  const setNote = <K extends keyof NoteContent>(
+    key: K,
+    value: NoteContent[K]
+  ) => {
     setForm(current => (current ? { ...current, [key]: value } : current));
     setDirty(true);
     setFieldErrors(errors => ({ ...errors, [key]: "" }));
@@ -308,11 +392,7 @@ export default function RecordEditorPage() {
         : null,
     confirmed: form.confirmed,
     voiceNoteId: form.voiceNoteId || null,
-    support: form.support,
-    response: form.response,
-    outcome: form.outcome,
-    observations: form.observations,
-    followUp: form.followUp,
+    ...noteInput(form),
   });
 
   const handleError = (failure: unknown) => {
@@ -324,7 +404,10 @@ export default function RecordEditorPage() {
   const save = async (): Promise<ServiceRecordDTO> => {
     setError("");
     if (!id) {
-      const created = await create.mutateAsync(payload());
+      const created = await create.mutateAsync({
+        ...payload(),
+        shiftId: form.shiftId || null,
+      });
       setDirty(false);
       setLoadedFor(null);
       navigate(`/app/records/${created.id}`, { replace: true });
@@ -350,15 +433,12 @@ export default function RecordEditorPage() {
   };
 
   const submit = async () => {
-    const missing = NOTE_SECTIONS.filter(section => !form[section].trim());
+    const problems = noteProblems(noteOf(form));
     if (!form.confirmed) return notify(MESSAGES.declaration, "error");
-    if (missing.length) {
+    if (problems.length) {
       setFieldErrors(
         Object.fromEntries(
-          missing.map(section => [
-            section,
-            `${NOTE_SECTION_LABELS[section]} is required.`,
-          ])
+          problems.map(problem => [problem.path, problem.message])
         )
       );
       return notify(MESSAGES.incompleteNote, "error");
@@ -397,6 +477,70 @@ export default function RecordEditorPage() {
     }
   };
 
+  const startAmending = (answering = "") => {
+    setForm(fromRecord(record!));
+    setReason("");
+    setRequestId(answering);
+    setFieldErrors({});
+    setError("");
+    setAmending(true);
+  };
+  const stopAmending = () => {
+    setForm(fromRecord(record!));
+    setAmending(false);
+    setDirty(false);
+    setFieldErrors({});
+    setError("");
+  };
+  const saveAmendment = async () => {
+    setError("");
+    if (!reason.trim()) {
+      setFieldErrors({ reason: "Say why the note is being amended." });
+      return;
+    }
+    try {
+      const updated = await amend.mutateAsync({
+        id: record!.id,
+        rev: record!.rev,
+        reason: reason.trim(),
+        requestId: requestId || undefined,
+        ...noteInput(form),
+      });
+      setForm(fromRecord(updated));
+      setAmending(false);
+      setDirty(false);
+      notify(
+        "Amendment saved. The earlier wording is kept in the note's history."
+      );
+    } catch (failure) {
+      handleError(failure);
+    }
+  };
+  const declineRequest = async () => {
+    if (!declining) return;
+    try {
+      await decline.mutateAsync({
+        id: record!.id,
+        requestId: declining.id,
+        note: declining.note.trim() || undefined,
+      });
+      setDeclining(null);
+      notify("Request declined. The worker can see your reply.");
+    } catch (failure) {
+      notify(errorMessage(failure), "error");
+    }
+  };
+  const pdfPath = `/service-records/${id}/pdf`;
+  const exportPdf = async (print: boolean) => {
+    try {
+      if (print) await openFile(pdfPath);
+      else
+        await downloadFile(pdfPath, `progress-note-${id}.pdf`, { download: 1 });
+    } catch (failure) {
+      notify(errorMessage(failure), "error");
+    }
+  };
+
   return (
     <>
       <Link
@@ -411,7 +555,10 @@ export default function RecordEditorPage() {
         subtitle="Document the shift clearly. This record will not create an invoice until it is approved and selected."
         actions={
           record ? (
-            <Status value={record.status} />
+            <span className="flex flex-wrap items-center gap-1.5">
+              <NoteFlags record={record} />
+              <Status value={record.status} />
+            </span>
           ) : (
             <Status value="Draft" label="New draft" />
           )
@@ -430,7 +577,58 @@ export default function RecordEditorPage() {
         <div className="mb-4 rounded-md border border-[#cce4d6] bg-[#eef8f1] p-3 text-xs text-[#426a53]">
           <CheckCircle2 size={14} className="mr-1 inline" />
           This record is {record.status.toLowerCase()} and locked from editing.
-          You can still review the billable summary.
+          A mistake in the note is corrected with <b>Amend note</b>, which keeps
+          the earlier wording and your reason.
+        </div>
+      )}
+      {amending && (
+        <div className="mb-4 rounded-md border border-[#d8cdf0] bg-[#f6f2fd] p-4">
+          <div className="text-xs font-bold text-[#4e3d86]">
+            <PenLine size={13} className="mr-1 inline" />
+            Amending a submitted note
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-[#5f5489]">
+            Change the sections below. The shift details and billing stay as
+            they are. What each section said before is kept with your name, the
+            time and this reason.
+          </p>
+          {openRequests.length > 0 && (
+            <div className="mt-3">
+              <label className="label" htmlFor="amend-request">
+                Answering a request
+              </label>
+              <select
+                id="amend-request"
+                className="select"
+                value={requestId}
+                onChange={event => setRequestId(event.target.value)}
+              >
+                <option value="">Not answering a request</option>
+                {openRequests.map(request => (
+                  <option key={request.id} value={request.id}>
+                    {request.by?.name ?? "Worker"}:{" "}
+                    {request.reason.slice(0, 80)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <label className="label mt-3" htmlFor="amend-reason">
+            Reason for the amendment <span className="text-red-600">*</span>
+          </label>
+          <textarea
+            id="amend-reason"
+            className="textarea"
+            rows={2}
+            maxLength={1000}
+            value={reason}
+            onChange={event => {
+              setReason(event.target.value);
+              setFieldErrors(errors => ({ ...errors, reason: "" }));
+            }}
+            placeholder="e.g. The worker reported the wrong time for the appointment."
+          />
+          <FieldError message={fieldErrors.reason} />
         </div>
       )}
       {sourceVoice.data?.draft && !id && (
@@ -444,8 +642,39 @@ export default function RecordEditorPage() {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-5">
-          <Panel title="Service details">
+          <Panel title="Shift information">
             <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+              {!id && shiftChoices.length > 0 && (
+                <div className="sm:col-span-2">
+                  <label className="label" htmlFor="record-shift">
+                    Rostered shift
+                  </label>
+                  <select
+                    id="record-shift"
+                    className="select"
+                    value={form.shiftId}
+                    onChange={event => applyShift(event.target.value)}
+                  >
+                    <option value="">Not linked to a rostered shift</option>
+                    {shiftChoices.map(shift => (
+                      <option key={shift.id} value={shift.id}>
+                        {shift.start}–{shift.end} · {shift.type} ·{" "}
+                        {shift.staff.map(member => member.name).join(", ") ||
+                          "Unassigned"}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="field-help">
+                    Choosing the shift fills in the worker, the service and the
+                    times from the roster and links this note to it.
+                  </p>
+                </div>
+              )}
+              {record?.shiftId && (
+                <div className="rounded-md bg-[#f4f7f6] px-3 py-2 text-[11px] text-[#60727a] sm:col-span-2">
+                  Linked to rostered shift <b>{record.shiftId}</b>.
+                </div>
+              )}
               <div>
                 <label className="label" htmlFor="record-client">
                   Participant <span className="text-red-600">*</span>
@@ -606,37 +835,30 @@ export default function RecordEditorPage() {
 
           <Panel title="Progress note">
             <div className="p-5">
-              <div className="mb-4 rounded-md border border-[#d9e9e5] bg-[#f1f8f6] p-3 text-[11px] leading-5 text-[#496663]">
-                <Info size={14} className="mr-1 inline" />
-                <b>Good documentation is specific.</b> Record concrete actions,
-                the participant’s response and the goal/outcome worked toward.
-                Avoid vague statements such as “everything okay”.
-              </div>
-              <div className="space-y-4">
-                {NOTE_SECTIONS.map(section => (
-                  <div key={section}>
-                    <label className="label" htmlFor={`field-${section}`}>
-                      {NOTE_SECTION_LABELS[section]}{" "}
-                      <span className="text-red-600">*</span>
-                    </label>
-                    <textarea
-                      id={`field-${section}`}
-                      disabled={!editable}
-                      className="textarea"
-                      value={form[section]}
-                      onChange={event => setField(section, event.target.value)}
-                      placeholder={
-                        section === "support"
-                          ? "e.g. Supported the participant with community access to…"
-                          : "Add clear, factual details…"
-                      }
-                      aria-invalid={Boolean(fieldErrors[section]) || undefined}
-                    />
-                    <FieldError message={fieldErrors[section]} />
-                    <p className="field-help">{HELP[section]}</p>
-                  </div>
-                ))}
-              </div>
+              {noteOpen && (
+                <div className="mb-4 rounded-md border border-[#d9e9e5] bg-[#f1f8f6] p-3 text-[11px] leading-5 text-[#496663]">
+                  <Info size={14} className="mr-1 inline" />
+                  <b>Good documentation is specific.</b> Record concrete
+                  actions, the participant’s choices and the goal worked toward.
+                  Avoid vague statements such as “everything okay”.
+                </div>
+              )}
+              <NoteForm
+                variant="office"
+                value={noteOf(form)}
+                onChange={setNote}
+                profileGoals={participant?.goals ?? []}
+                errors={fieldErrors}
+                disabled={!noteOpen}
+                incidentAction={
+                  <Link
+                    href="/app/worker-reports"
+                    className="font-semibold text-[#7a5a14] underline"
+                  >
+                    Open worker reports
+                  </Link>
+                }
+              />
             </div>
           </Panel>
 
@@ -825,6 +1047,151 @@ export default function RecordEditorPage() {
               })}
             </div>
           </Panel>
+          {record && record.amendmentRequests.length > 0 && (
+            <Panel title="Amendment requests">
+              <ul className="space-y-3 p-5">
+                {[...record.amendmentRequests].reverse().map(request => (
+                  <li key={request.id} className="text-[11px]">
+                    <div className="flex items-start justify-between gap-2">
+                      <b className="text-[#455963]">
+                        {request.by?.name ?? "Worker"}
+                      </b>
+                      <Status
+                        value={
+                          request.status === "Open"
+                            ? "Submitted"
+                            : request.status === "Applied"
+                              ? "Approved"
+                              : "Returned"
+                        }
+                        label={request.status}
+                      />
+                    </div>
+                    <span className="block text-[10px] text-[#8a969b]">
+                      {formatDateTime(request.at)}
+                    </span>
+                    <p className="mt-1 leading-4 text-[#586b73]">
+                      {request.reason}
+                    </p>
+                    {request.status !== "Open" && request.resolution && (
+                      <p className="mt-1 text-[10px] leading-4 text-[#7c8a90]">
+                        {request.resolvedBy?.name ?? "Office"}:{" "}
+                        {request.resolution}
+                      </p>
+                    )}
+                    {request.status === "Open" &&
+                      (declining?.id === request.id ? (
+                        <div className="mt-2">
+                          <textarea
+                            className="textarea"
+                            rows={2}
+                            maxLength={500}
+                            aria-label="Reply to the worker"
+                            placeholder="Why the note stays as it is (the worker sees this)"
+                            value={declining.note}
+                            onChange={event =>
+                              setDeclining({
+                                id: request.id,
+                                note: event.target.value,
+                              })
+                            }
+                          />
+                          <div className="mt-2 flex gap-2">
+                            <Btn
+                              variant="danger"
+                              loading={decline.isPending}
+                              onClick={() => void declineRequest()}
+                            >
+                              Decline request
+                            </Btn>
+                            <Btn
+                              variant="quiet"
+                              onClick={() => setDeclining(null)}
+                            >
+                              Cancel
+                            </Btn>
+                          </div>
+                        </div>
+                      ) : (
+                        !amending && (
+                          <div className="mt-2 flex gap-2">
+                            <Btn onClick={() => startAmending(request.id)}>
+                              Amend now
+                            </Btn>
+                            <Btn
+                              variant="secondary"
+                              onClick={() =>
+                                setDeclining({ id: request.id, note: "" })
+                              }
+                            >
+                              Decline
+                            </Btn>
+                          </div>
+                        )
+                      ))}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+          {record && record.amendments.length > 0 && (
+            <Panel title={`Amendments (${record.amendments.length})`}>
+              <ol className="space-y-4 p-5">
+                {[...record.amendments].reverse().map(amendment => (
+                  <li key={amendment.id} className="text-[11px]">
+                    <b className="text-[#455963]">
+                      {amendment.by?.name ?? "Unknown"}
+                    </b>
+                    <span className="block text-[10px] text-[#8a969b]">
+                      {formatDateTime(amendment.at)}
+                    </span>
+                    <p className="mt-1 leading-4 text-[#586b73]">
+                      <span className="font-semibold">Reason:</span>{" "}
+                      {amendment.reason}
+                    </p>
+                    {amendment.changes.map(change => (
+                      <div
+                        key={change.field}
+                        className="mt-2 rounded-md bg-[#f6f8f7] p-2 text-[10px] leading-4"
+                      >
+                        <div className="font-semibold text-[#455963]">
+                          {change.label}
+                        </div>
+                        <div className="text-[#9a6a64] line-through">
+                          {change.before || "(empty)"}
+                        </div>
+                        <div className="text-[#2f6b55]">
+                          {change.after || "(empty)"}
+                        </div>
+                      </div>
+                    ))}
+                  </li>
+                ))}
+              </ol>
+            </Panel>
+          )}
+          {record?.relatedReports && record.relatedReports.length > 0 && (
+            <Panel title="Reports for this shift">
+              <ul className="space-y-2 p-5 text-[11px]">
+                {record.relatedReports.map(report => (
+                  <li key={`${report.kind}-${report.id}`}>
+                    <Link
+                      href={`/app/worker-reports/${report.kind === "abc" ? "abc" : "incidents"}`}
+                      className="font-semibold text-[#277c76]"
+                    >
+                      {report.kind === "abc"
+                        ? "Behaviour (ABC) report"
+                        : "Incident report"}
+                    </Link>
+                    <span className="block text-[10px] text-[#8a969b]">
+                      {report.summary} · {report.status} ·{" "}
+                      {prettyDate(report.date)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
           {record?.invoiceId && (
             <Panel title="Invoice link">
               <div className="p-5 text-xs">
@@ -905,17 +1272,40 @@ export default function RecordEditorPage() {
                 Save draft
               </Btn>
               <Btn
-                disabled={!form.support.trim() || busy}
+                disabled={busy}
                 loading={action.isPending}
                 onClick={() => void submit()}
               >
                 Submit for review <ArrowRight size={14} />
               </Btn>
             </>
+          ) : amending ? (
+            <>
+              <Btn variant="quiet" onClick={stopAmending} disabled={busy}>
+                Cancel
+              </Btn>
+              <Btn
+                loading={amend.isPending}
+                onClick={() => void saveAmendment()}
+              >
+                <PenLine size={14} /> Save amendment
+              </Btn>
+            </>
           ) : (
-            <Btn variant="secondary" onClick={() => navigate(backHref)}>
-              Back to client
-            </Btn>
+            <>
+              <Btn variant="secondary" onClick={() => navigate(backHref)}>
+                Back to client
+              </Btn>
+              <Btn variant="secondary" onClick={() => void exportPdf(true)}>
+                <Printer size={14} /> Print
+              </Btn>
+              <Btn variant="secondary" onClick={() => void exportPdf(false)}>
+                <Download size={14} /> PDF
+              </Btn>
+              <Btn onClick={() => startAmending()}>
+                <PenLine size={14} /> Amend note
+              </Btn>
+            </>
           )}
         </div>
       </div>

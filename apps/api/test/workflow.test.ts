@@ -36,7 +36,7 @@ describe("service record workflow", () => {
   it("computes billables, enforces submit rules and locks reviewed records", async () => {
     const draft = await createRecord(agent, ids, {
       confirmed: false,
-      support: "",
+      summary: "",
     });
     expect(draft.status).toBe("Draft");
     expect(draft.id).toMatch(/^SR-\d{4}$/);

@@ -1,20 +1,34 @@
 import type { z } from "zod";
-import type { ServiceRecordDTO } from "@shared/dto";
+import type { HandoverNoteDTO, ServiceRecordDTO } from "@shared/dto";
+import { addDays } from "@shared/logic/time";
+import type { amendmentRequestSchema } from "@shared/schemas/records";
 import type {
   portalNoteCreateSchema,
   portalNoteUpdateSchema,
 } from "@shared/schemas/staff-portal";
 import { errors } from "../../lib/errors";
 import type { RequestContext } from "../../lib/http";
-import { ServiceRecord, type ServiceRecordDoc } from "../../models";
+import { workspaceToday } from "../../lib/workspace";
+import {
+  RosterShift,
+  ServiceRecord,
+  type ServiceRecordDoc,
+} from "../../models";
+import {
+  getRecordDetail,
+  recentNotesFor,
+  requestAmendment,
+} from "../records/notes";
 import {
   createRecord,
-  getRecord,
   getRecordDoc,
   listRecords,
   submitRecord,
   updateRecord,
 } from "../records/service";
+
+/** How far back a shift still counts as supporting a participant, for reading their notes. */
+const HANDOVER_WINDOW_DAYS = 60;
 
 /** The worker may only ever touch their own notes. */
 async function ownRecord(
@@ -60,7 +74,7 @@ export async function getPortalNote(
   id: string
 ): Promise<ServiceRecordDTO> {
   await ownRecord(staffId, id);
-  return getRecord(id);
+  return getRecordDetail(id);
 }
 
 export async function createPortalNote(
@@ -68,7 +82,50 @@ export async function createPortalNote(
   input: z.output<typeof portalNoteCreateSchema>,
   ctx: RequestContext
 ): Promise<ServiceRecordDTO> {
+  // A worker writes notes for the participants on their own roster, and nobody else.
+  const rostered = await RosterShift.exists(
+    input.shiftId
+      ? { _id: input.shiftId, staffIds: staffId, clientIds: input.clientId }
+      : {
+          staffIds: staffId,
+          clientIds: input.clientId,
+          status: { $ne: "Cancelled" },
+        }
+  );
+  if (!rostered)
+    throw errors.forbidden(
+      "You can only write notes for participants you are rostered with."
+    );
   return createRecord({ ...input, staffId }, ctx);
+}
+
+/** A submitted note is locked for the worker; this asks the office to correct it. */
+export async function requestPortalAmendment(
+  staffId: string,
+  id: string,
+  input: z.output<typeof amendmentRequestSchema>,
+  ctx: RequestContext
+): Promise<ServiceRecordDTO> {
+  await ownRecord(staffId, id);
+  return requestAmendment(id, input, ctx);
+}
+
+/**
+ * The last notes about a participant, for handover. Only for a worker who is, or recently was,
+ * rostered with them: the notes of people they do not support stay closed.
+ */
+export async function portalHandover(
+  staffId: string,
+  participantId: string
+): Promise<HandoverNoteDTO[]> {
+  const rostered = await RosterShift.exists({
+    staffIds: staffId,
+    clientIds: participantId,
+    status: { $ne: "Cancelled" },
+    date: { $gte: addDays(await workspaceToday(), -HANDOVER_WINDOW_DAYS) },
+  });
+  if (!rostered) throw errors.notFound("Participant");
+  return recentNotesFor(participantId, 3);
 }
 
 export async function updatePortalNote(

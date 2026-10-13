@@ -1,7 +1,9 @@
 import { model, Schema, type Types } from "mongoose";
 import {
+  AMENDMENT_REQUEST_STATUSES,
   RECORD_STATUSES,
   SERVICE_UNITS,
+  type AmendmentRequestStatus,
   type RecordStatus,
   type ServiceUnit,
 } from "@shared/enums";
@@ -14,6 +16,34 @@ import {
   type BillableSub,
   type HistorySub,
 } from "./common";
+
+export interface NoteChangeSub {
+  field: string;
+  label: string;
+  before: string;
+  after: string;
+}
+
+/** A correction to a submitted note. The note itself holds the corrected text; this keeps what it replaced. */
+export interface NoteAmendmentSub {
+  id: string;
+  at: Date;
+  by: ActorRefSub | null;
+  reason: string;
+  requestId: string | null;
+  changes: NoteChangeSub[];
+}
+
+export interface NoteAmendmentRequestSub {
+  id: string;
+  at: Date;
+  by: ActorRefSub | null;
+  reason: string;
+  status: AmendmentRequestStatus;
+  resolvedAt: Date | null;
+  resolvedBy: ActorRefSub | null;
+  resolution: string;
+}
 
 export interface ServiceRecordDoc {
   _id: string;
@@ -32,11 +62,23 @@ export interface ServiceRecordDoc {
   location: string;
   km: number;
   quantity: number | null;
+  /** The progress note: what was ticked, and the details written beside it. */
+  supportTypes: string[];
   support: string;
-  response: string;
+  summary: string;
+  goals: string[];
   outcome: string;
-  observations: string;
+  achievements: string;
+  health: string[];
+  healthDetails: string;
+  incident: string[];
+  incidentDetails: string;
   followUp: string;
+  /** Where the shift summary lived before it was one box. Read through `summary`, never written now. */
+  response: string;
+  observations: string;
+  amendments: NoteAmendmentSub[];
+  amendmentRequests: NoteAmendmentRequestSub[];
   confirmed: boolean;
   confirmedAt: Date | null;
   billables: BillableSub[];
@@ -56,6 +98,49 @@ export interface ServiceRecordDoc {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const amendmentSchema = new Schema<NoteAmendmentSub>(
+  {
+    id: { type: String, required: true },
+    at: { type: Date, required: true },
+    by: { type: actorSchema, default: null },
+    reason: { type: String, required: true },
+    requestId: { type: String, default: null },
+    changes: {
+      type: [
+        new Schema<NoteChangeSub>(
+          {
+            field: { type: String, required: true },
+            label: { type: String, required: true },
+            before: { type: String, default: "" },
+            after: { type: String, default: "" },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+  },
+  { _id: false }
+);
+
+const amendmentRequestSchema = new Schema<NoteAmendmentRequestSub>(
+  {
+    id: { type: String, required: true },
+    at: { type: Date, required: true },
+    by: { type: actorSchema, default: null },
+    reason: { type: String, required: true },
+    status: {
+      type: String,
+      enum: AMENDMENT_REQUEST_STATUSES,
+      default: "Open",
+    },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: { type: actorSchema, default: null },
+    resolution: { type: String, default: "" },
+  },
+  { _id: false }
+);
 
 const serviceRecordSchema = new Schema<ServiceRecordDoc>(
   {
@@ -79,11 +164,21 @@ const serviceRecordSchema = new Schema<ServiceRecordDoc>(
     location: { type: String, default: "" },
     km: { type: Number, default: 0 },
     quantity: { type: Number, default: null },
+    supportTypes: { type: [String], default: [] },
     support: { type: String, default: "" },
-    response: { type: String, default: "" },
+    summary: { type: String, default: "" },
+    goals: { type: [String], default: [] },
     outcome: { type: String, default: "" },
-    observations: { type: String, default: "" },
+    achievements: { type: String, default: "" },
+    health: { type: [String], default: [] },
+    healthDetails: { type: String, default: "" },
+    incident: { type: [String], default: [] },
+    incidentDetails: { type: String, default: "" },
     followUp: { type: String, default: "" },
+    response: { type: String, default: "" },
+    observations: { type: String, default: "" },
+    amendments: { type: [amendmentSchema], default: [] },
+    amendmentRequests: { type: [amendmentRequestSchema], default: [] },
     confirmed: { type: Boolean, default: false },
     confirmedAt: { type: Date, default: null },
     billables: { type: [billableSchema], default: [] },
@@ -108,6 +203,7 @@ serviceRecordSchema.index({ status: 1, date: -1 });
 serviceRecordSchema.index({ staffId: 1, date: -1 });
 serviceRecordSchema.index({ invoiceId: 1 });
 serviceRecordSchema.index({ date: -1 });
+serviceRecordSchema.index({ shiftId: 1 });
 
 export const ServiceRecord = model<ServiceRecordDoc>(
   "ServiceRecord",

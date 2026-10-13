@@ -89,10 +89,13 @@ export async function createParticipant(
 }
 
 export const completeNote = {
+  supportTypes: ["Community access", "Shopping and errands"],
   support: "Supported Mia with community access and grocery shopping.",
-  response: "Mia was settled and engaged throughout.",
+  summary:
+    "Mia chose the shops she wanted to visit and was settled and engaged throughout.",
   outcome: "Practised making independent choices in the community.",
-  observations: "No incidents observed.",
+  health: ["No concerns"],
+  incident: ["No incident"],
   followUp: "Bring the meal-planning worksheet next visit.",
 };
 
