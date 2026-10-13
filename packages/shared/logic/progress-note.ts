@@ -112,18 +112,8 @@ export function noteProblems(note: NoteContent): NoteProblem[] {
       path: "supportTypes",
       message: "Tick at least one kind of support provided.",
     });
-  if (note.supportTypes.includes(OTHER_SUPPORT) && blank(note.support))
-    problems.push({
-      path: "support",
-      message: "Describe the other support provided.",
-    });
   if (blank(note.summary))
     problems.push({ path: "summary", message: "Write the shift summary." });
-  if (note.goals.length && blank(note.outcome))
-    problems.push({
-      path: "outcome",
-      message: "Describe the progress towards the goals you selected.",
-    });
   if (!note.health.length)
     problems.push({
       path: "health",

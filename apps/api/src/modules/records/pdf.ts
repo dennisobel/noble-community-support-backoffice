@@ -142,11 +142,13 @@ export function renderNotePdf(
     ["Details", note.support],
   ]);
   section("Shift summary", [["", note.summary]]);
-  section("Participant goals and outcomes", [
-    ["Goals worked on", note.goals.map(goal => `- ${goal}`).join("\n")],
-    ["Progress", note.outcome],
-    ["Achievements and outcomes", note.achievements],
-  ]);
+  // Goals are no longer part of the form; older notes that recorded them still print theirs.
+  if (note.goals.length || note.outcome.trim() || note.achievements.trim())
+    section("Participant goals and outcomes", [
+      ["Goals worked on", note.goals.map(goal => `- ${goal}`).join("\n")],
+      ["Progress", note.outcome],
+      ["Achievements and outcomes", note.achievements],
+    ]);
   section("Health and wellbeing", [
     ["", note.health.join(", ")],
     ["Details", note.healthDetails],

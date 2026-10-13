@@ -847,7 +847,6 @@ export default function RecordEditorPage() {
                 variant="office"
                 value={noteOf(form)}
                 onChange={setNote}
-                profileGoals={participant?.goals ?? []}
                 errors={fieldErrors}
                 disabled={!noteOpen}
                 incidentAction={

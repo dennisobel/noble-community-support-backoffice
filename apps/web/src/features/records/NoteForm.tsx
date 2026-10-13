@@ -5,7 +5,6 @@ import { HEALTH_FLAGS, INCIDENT_FLAGS, SUPPORT_PROVIDED } from "@shared/enums";
 import {
   healthNeedsDetails,
   incidentNeedsDetails,
-  OTHER_SUPPORT,
   toggleHealth,
   toggleIncident,
   type NoteContent,
@@ -104,6 +103,7 @@ function TextBox({
   variant,
   id,
   label,
+  hideLabel = false,
   required = false,
   value,
   onChange,
@@ -115,6 +115,8 @@ function TextBox({
   variant: Variant;
   id: string;
   label: string;
+  /** Keeps the label for screen readers only, for a box the section heading already names. */
+  hideLabel?: boolean;
   required?: boolean;
   value: string;
   onChange: (value: string) => void;
@@ -125,9 +127,11 @@ function TextBox({
 }) {
   if (variant === "portal")
     return (
-      <label className="portal-field !mb-0 mt-3">
-        {label}
-        {required && " *"}
+      <label className={`portal-field !mb-0 ${hideLabel ? "" : "mt-3"}`}>
+        <span className={hideLabel ? "sr-only" : ""}>
+          {label}
+          {required && " *"}
+        </span>
         <textarea
           id={id}
           rows={rows}
@@ -141,8 +145,8 @@ function TextBox({
       </label>
     );
   return (
-    <div className="mt-3">
-      <label className="label" htmlFor={id}>
+    <div className={hideLabel ? "" : "mt-3"}>
+      <label className={hideLabel ? "sr-only" : "label"} htmlFor={id}>
         {label} {required && <span className="text-red-600">*</span>}
       </label>
       <textarea
@@ -170,14 +174,13 @@ function Callout({ children }: { children: ReactNode }) {
 }
 
 /**
- * The written part of a progress note: support provided, the shift summary, goals, health,
+ * The written part of a progress note: support provided, the shift summary, health,
  * incidents and handover. The shift details above it belong to whichever screen shows the form.
  */
 export function NoteForm({
   variant,
   value,
   onChange,
-  profileGoals,
   errors = {},
   disabled = false,
   incidentAction,
@@ -185,14 +188,11 @@ export function NoteForm({
   variant: Variant;
   value: NoteContent;
   onChange: <K extends keyof NoteContent>(key: K, next: NoteContent[K]) => void;
-  /** The goals on the participant's profile. Goals already on the note stay listed even if the profile has changed. */
-  profileGoals: string[];
   errors?: Record<string, string | undefined>;
   disabled?: boolean;
   /** How to file the formal report from here: the worker gets the forms, the office a pointer to them. */
   incidentAction?: ReactNode;
 }) {
-  const goalChoices = [...new Set([...profileGoals, ...value.goals])];
   const toggleIn = (list: string[], option: string, order: readonly string[]) =>
     order.filter(item =>
       item === option ? !list.includes(option) : list.includes(item)
@@ -225,18 +225,6 @@ export function NoteForm({
           }
         />
         <Problem message={errors.supportTypes} />
-        <TextBox
-          variant={variant}
-          id="note-support"
-          label="Specific details"
-          required={value.supportTypes.includes(OTHER_SUPPORT)}
-          value={value.support}
-          disabled={disabled}
-          error={errors.support}
-          hint="What exactly you did, such as where you went or what you helped with."
-          rows={2}
-          onChange={next => onChange("support", next)}
-        />
       </Group>
 
       <Group variant={variant} title="Shift summary">
@@ -244,6 +232,7 @@ export function NoteForm({
           variant={variant}
           id="note-summary"
           label="What happened on the shift"
+          hideLabel
           required
           value={value.summary}
           disabled={disabled}
@@ -251,51 +240,6 @@ export function NoteForm({
           hint="Activities completed, the help you gave, the participant's choices and preferences, how engaged they were, and anything you observed. Stick to what you saw and heard."
           rows={5}
           onChange={next => onChange("summary", next)}
-        />
-      </Group>
-
-      <Group
-        variant={variant}
-        title="Participant goals and outcomes"
-        hint="Tick the NDIS goals this shift worked towards."
-      >
-        {goalChoices.length ? (
-          <Ticks
-            variant={variant}
-            options={goalChoices}
-            selected={value.goals}
-            disabled={disabled}
-            columns="grid-cols-1"
-            onToggle={option =>
-              onChange("goals", toggleIn(value.goals, option, goalChoices))
-            }
-          />
-        ) : (
-          <p className="text-[11px] leading-5 text-[#7a888d]">
-            No goals are recorded on this participant&rsquo;s profile yet. You
-            can still describe progress below.
-          </p>
-        )}
-        <TextBox
-          variant={variant}
-          id="note-outcome"
-          label="Progress towards the goals"
-          required={value.goals.length > 0}
-          value={value.outcome}
-          disabled={disabled}
-          error={errors.outcome}
-          hint="What the participant did or practised towards each goal you ticked."
-          onChange={next => onChange("outcome", next)}
-        />
-        <TextBox
-          variant={variant}
-          id="note-achievements"
-          label="Achievements and outcomes"
-          value={value.achievements}
-          disabled={disabled}
-          hint="Anything they achieved or did for the first time."
-          rows={2}
-          onChange={next => onChange("achievements", next)}
         />
       </Group>
 

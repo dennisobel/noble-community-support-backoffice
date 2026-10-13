@@ -147,7 +147,7 @@ describe("writing a progress note", () => {
       "incident",
     ]);
 
-    // A concern, a goal and "other support" each ask for their own details
+    // A health concern and an incident each ask for their own details
     const partial = await worker.patch(`${API}/portal/notes/${noteId}`).send({
       supportTypes: ["Community access", "Other support"],
       summary: "Mia chose the cafe and ordered for herself.",
@@ -161,12 +161,7 @@ describe("writing a progress note", () => {
       `${API}/portal/notes/${noteId}/submit`
     );
     expect(unfinished.status).toBe(422);
-    expect(paths(unfinished.body)).toEqual([
-      "support",
-      "outcome",
-      "healthDetails",
-      "incidentDetails",
-    ]);
+    expect(paths(unfinished.body)).toEqual(["healthDetails", "incidentDetails"]);
     // "No concerns" cannot sit beside a concern
     const muddled = await worker.patch(`${API}/portal/notes/${noteId}`).send({
       health: ["No concerns", "Health concern identified"],

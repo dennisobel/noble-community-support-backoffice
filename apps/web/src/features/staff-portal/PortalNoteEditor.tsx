@@ -289,7 +289,6 @@ export default function PortalNoteEditor() {
         variant="portal"
         value={content}
         onChange={set}
-        profileGoals={person?.goals ?? []}
         errors={errors}
         disabled={locked || busy}
         incidentAction={
