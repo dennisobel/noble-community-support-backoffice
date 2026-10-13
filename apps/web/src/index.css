@@ -231,6 +231,18 @@ button:disabled {
   border-color: #63a69f;
   box-shadow: 0 0 0 3px rgba(53, 143, 132, 0.12);
 }
+.input[aria-invalid="true"],
+.select[aria-invalid="true"],
+.textarea[aria-invalid="true"] {
+  border-color: #d9756f;
+  background: #fffafa;
+}
+.input[aria-invalid="true"]:focus,
+.select[aria-invalid="true"]:focus,
+.textarea[aria-invalid="true"]:focus {
+  border-color: #b9433e;
+  box-shadow: 0 0 0 3px rgba(185, 67, 62, 0.14);
+}
 .textarea {
   min-height: 95px;
   resize: vertical;

@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { DETAIL_LEVELS, NOTE_TEMPLATES } from "../enums";
 import { isValidTimeZone } from "../logic/time";
-import { money, optionalEmail, requiredText, text } from "./common";
+import {
+  email as emailSchema,
+  money,
+  requiredText,
+  text,
+} from "./common";
 
 const abn = z
   .string()
@@ -16,7 +21,11 @@ export const workspacePatchSchema = z.object({
   abn: abn.optional(),
   address: text(300).optional(),
   phone: text(40).optional(),
-  email: optionalEmail,
+  email: z
+    .union([emailSchema, z.literal("")], {
+      error: "Enter a valid accounts email address, or leave it blank.",
+    })
+    .optional(),
   timezone: z
     .string()
     .refine(isValidTimeZone, { error: "Choose a valid timezone." })
@@ -24,7 +33,10 @@ export const workspacePatchSchema = z.object({
   gst: z
     .object({
       registered: z.boolean(),
-      ratePct: z.number().min(0).max(20),
+      ratePct: z
+        .number({ error: "Enter a GST rate between 0 and 20." })
+        .min(0, { error: "Enter a GST rate between 0 and 20." })
+        .max(20, { error: "Enter a GST rate between 0 and 20." }),
     })
     .optional(),
   invoice: z
@@ -32,10 +44,16 @@ export const workspacePatchSchema = z.object({
       prefix: z
         .string()
         .trim()
+        .min(1, { error: "Enter an invoice number prefix, e.g. INV." })
         .regex(/^[A-Z0-9]{1,8}$/, {
-          error: "Use 1–8 capital letters or digits.",
+          error:
+            "The invoice number prefix must be 1–8 capital letters or digits, with no spaces or symbols (e.g. INV).",
         }),
-      defaultPaymentTermsDays: z.number().int().min(0).max(120),
+      defaultPaymentTermsDays: z
+        .number({ error: "Enter payment terms as whole days, 0 to 120." })
+        .int({ error: "Enter payment terms as whole days, 0 to 120." })
+        .min(0, { error: "Enter payment terms as whole days, 0 to 120." })
+        .max(120, { error: "Enter payment terms as whole days, 0 to 120." }),
       footer: text(500),
       paymentInstructions: text(1000),
     })
@@ -50,14 +68,14 @@ export const workspacePatchSchema = z.object({
         .trim()
         .transform(value => value.replace(/[^0-9]/g, ""))
         .refine(value => value.length === 0 || value.length === 6, {
-          error: "Enter the six-digit BSB.",
+          error: "Enter the six-digit BSB, e.g. 067-873.",
         }),
       accountNumber: z
         .string()
         .trim()
         .transform(value => value.replace(/[^0-9]/g, ""))
         .refine(value => value.length === 0 || value.length <= 10, {
-          error: "Enter a valid account number.",
+          error: "Enter the bank account number: up to 10 digits.",
         }),
       payInstruction: text(160),
     })
@@ -69,7 +87,7 @@ export const workspacePatchSchema = z.object({
   budgetCategories: z
     .array(requiredText(60, "Category names cannot be blank."))
     .min(1, { error: "Keep at least one budget category." })
-    .max(12)
+    .max(12, { error: "Keep to 12 budget categories at most." })
     .refine(
       values =>
         new Set(values.map(value => value.toLowerCase())).size ===

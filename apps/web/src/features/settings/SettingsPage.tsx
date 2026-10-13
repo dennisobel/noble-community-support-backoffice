@@ -4,7 +4,11 @@ import { Link, useLocation, useParams } from "wouter";
 import type { NotificationPreferences, WorkspaceDTO } from "@shared/dto";
 import { MESSAGES } from "@shared/messages";
 import { MIN_PASSWORD_LENGTH } from "@shared/schemas/auth";
-import { api, errorMessage } from "@/api/client";
+import {
+  workspacePatchSchema,
+  type WorkspacePatchInput,
+} from "@shared/schemas/settings";
+import { ApiError, api, errorMessage } from "@/api/client";
 import {
   useActivity,
   useAuthSessions,
@@ -20,6 +24,7 @@ import {
 import {
   Btn,
   ErrorBlock,
+  FieldError,
   FormAlert,
   LoadingBlock,
   Panel,
@@ -52,6 +57,54 @@ const TIMEZONES = [
   "Australia/Perth",
 ];
 
+/** Workspace form fields by validation path, in page order; the label is what the page calls the field. */
+const FIELD_LABELS: Record<string, string> = {
+  name: "Workspace name",
+  legalName: "Legal name",
+  abn: "ABN",
+  phone: "Phone",
+  email: "Accounts email",
+  timezone: "Timezone",
+  address: "Address",
+  "invoice.prefix": "Invoice number prefix",
+  "invoice.defaultPaymentTermsDays": "Default payment terms (days)",
+  "gst.ratePct": "GST charged on invoices (%)",
+  providerTravelRate: "Provider travel rate",
+  "bank.accountName": "Bank account name",
+  "bank.bsb": "BSB",
+  "bank.accountNumber": "Bank account number",
+  "bank.payInstruction": "What the payer should reference",
+  "invoice.paymentInstructions": "Extra payment instructions",
+  "invoice.footer": "Invoice footer",
+  budgetCategories: "Budget categories",
+};
+
+const fieldId = (path: string) => `workspace-${path.replace(/\./g, "-")}`;
+const focusField = (path: string) => {
+  const element = document.getElementById(fieldId(path));
+  element?.scrollIntoView({ block: "center" });
+  element?.focus({ preventScroll: true });
+};
+
+/** One message per field; a problem with a single category counts against the whole list. */
+const byField = (messages: Record<string, string>) => {
+  const result: Record<string, string> = {};
+  for (const [path, message] of Object.entries(messages)) {
+    const key = path.startsWith("budgetCategories") ? "budgetCategories" : path;
+    result[key] ??= message;
+  }
+  return result;
+};
+
+function workspaceErrors(input: WorkspacePatchInput) {
+  const parsed = workspacePatchSchema.safeParse(input);
+  if (parsed.success) return {};
+  const messages: Record<string, string> = {};
+  for (const issue of parsed.error.issues)
+    messages[issue.path.join(".")] ??= issue.message;
+  return byField(messages);
+}
+
 function WorkspaceSettings() {
   const notify = useNotify();
   const workspace = useWorkspace();
@@ -59,6 +112,8 @@ function WorkspaceSettings() {
   const [form, setForm] = useState<WorkspaceDTO | null>(null);
   const [newCategory, setNewCategory] = useState("");
   const [error, setError] = useState("");
+  const [checked, setChecked] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   useEffect(() => {
     if (workspace.data) setForm(workspace.data);
   }, [workspace.data]);
@@ -67,30 +122,58 @@ function WorkspaceSettings() {
     return (
       <ErrorBlock error={workspace.error} onRetry={() => workspace.refetch()} />
     );
-  const set = <K extends keyof WorkspaceDTO>(key: K, value: WorkspaceDTO[K]) =>
+  const set = <K extends keyof WorkspaceDTO>(key: K, value: WorkspaceDTO[K]) => {
+    setServerErrors({});
     setForm(current => (current ? { ...current, [key]: value } : current));
+  };
+
+  const payload: WorkspacePatchInput = {
+    name: form.name,
+    legalName: form.legalName,
+    abn: form.abn,
+    address: form.address,
+    phone: form.phone,
+    email: form.email,
+    timezone: form.timezone,
+    gst: form.gst,
+    invoice: form.invoice,
+    bank: form.bank,
+    providerTravelRate: Number(form.providerTravelRate),
+    budgetCategories: form.budgetCategories,
+  };
+  // After a failed save the messages follow the form, so each one clears as its field is fixed.
+  const errors: Record<string, string> = {
+    ...serverErrors,
+    ...(checked ? workspaceErrors(payload) : {}),
+  };
+  const invalidPaths = [
+    ...Object.keys(FIELD_LABELS).filter(path => errors[path]),
+    ...Object.keys(errors).filter(path => !FIELD_LABELS[path]),
+  ];
+  const fieldProps = (path: string) => ({
+    id: fieldId(path),
+    "aria-invalid": errors[path] ? (true as const) : undefined,
+  });
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    setServerErrors({});
+    setChecked(true);
+    const found = workspaceErrors(payload);
+    const first = Object.keys(FIELD_LABELS).find(path => found[path]);
+    if (first) return focusField(first);
     try {
-      await update.mutateAsync({
-        name: form.name,
-        legalName: form.legalName,
-        abn: form.abn,
-        address: form.address,
-        phone: form.phone,
-        email: form.email,
-        timezone: form.timezone,
-        gst: form.gst,
-        invoice: form.invoice,
-        bank: form.bank,
-        providerTravelRate: Number(form.providerTravelRate),
-        budgetCategories: form.budgetCategories,
-      });
+      await update.mutateAsync(payload);
+      setChecked(false);
       notify("Workspace settings saved.");
     } catch (failure) {
-      setError(errorMessage(failure));
+      const fields =
+        failure instanceof ApiError ? byField(failure.fieldErrors()) : {};
+      if (Object.keys(fields).length) {
+        setServerErrors(fields);
+        focusField(Object.keys(fields)[0]);
+      } else setError(errorMessage(failure));
     }
   };
   const field = (
@@ -105,7 +188,9 @@ function WorkspaceSettings() {
         value={form[key]}
         placeholder={placeholder}
         onChange={event => set(key, event.target.value)}
+        {...fieldProps(key)}
       />
+      <FieldError message={errors[key]} />
     </label>
   );
 
@@ -126,6 +211,7 @@ function WorkspaceSettings() {
             Timezone
             <select
               className="select mt-1"
+              {...fieldProps("timezone")}
               value={form.timezone}
               onChange={event => set("timezone", event.target.value)}
             >
@@ -136,6 +222,7 @@ function WorkspaceSettings() {
             <span className="field-help block font-normal">
               Defines “today” for rosters, budgets and due dates.
             </span>
+            <FieldError message={errors.timezone} />
           </label>
           <div className="sm:col-span-2">{field("address", "Address")}</div>
         </div>
@@ -146,6 +233,7 @@ function WorkspaceSettings() {
             Invoice number prefix
             <input
               className="input mt-1"
+              {...fieldProps("invoice.prefix")}
               value={form.invoice.prefix}
               onChange={event =>
                 set("invoice", {
@@ -155,8 +243,10 @@ function WorkspaceSettings() {
               }
             />
             <span className="field-help block font-normal">
-              Numbers look like {form.invoice.prefix || "INV"}-2026-001.
+              1–8 capital letters or digits. Numbers look like{" "}
+              {form.invoice.prefix || "INV"}-2026-001.
             </span>
+            <FieldError message={errors["invoice.prefix"]} />
           </label>
           <label className="label">
             Default payment terms (days)
@@ -165,6 +255,7 @@ function WorkspaceSettings() {
               type="number"
               min="0"
               max="120"
+              {...fieldProps("invoice.defaultPaymentTermsDays")}
               value={form.invoice.defaultPaymentTermsDays}
               onChange={event =>
                 set("invoice", {
@@ -173,6 +264,7 @@ function WorkspaceSettings() {
                 })
               }
             />
+            <FieldError message={errors["invoice.defaultPaymentTermsDays"]} />
           </label>
           <label className="flex items-start gap-2 rounded-md bg-[#f5f8f7] p-3 text-xs text-[#586c74]">
             <input
@@ -198,6 +290,7 @@ function WorkspaceSettings() {
               min="0"
               max="20"
               step="0.5"
+              {...fieldProps("gst.ratePct")}
               value={form.gst.ratePct}
               onChange={event =>
                 set("gst", { ...form.gst, ratePct: Number(event.target.value) })
@@ -206,6 +299,7 @@ function WorkspaceSettings() {
             <span className="field-help block font-normal">
               Most NDIS supports are GST-free; confirm with your accountant.
             </span>
+            <FieldError message={errors["gst.ratePct"]} />
           </label>
           <label className="label">
             Provider travel rate (AUD per km)
@@ -214,11 +308,13 @@ function WorkspaceSettings() {
               type="number"
               min="0"
               step="0.01"
+              {...fieldProps("providerTravelRate")}
               value={form.providerTravelRate}
               onChange={event =>
                 set("providerTravelRate", Number(event.target.value))
               }
             />
+            <FieldError message={errors.providerTravelRate} />
           </label>
           <div className="sm:col-span-2">
             <h3 className="text-[11px] font-bold uppercase tracking-[.06em] text-[#687982]">
@@ -242,7 +338,9 @@ function WorkspaceSettings() {
                     })
                   }
                   placeholder="NOBLE COMMUNITY SUPPORT PTY LTD"
+                  {...fieldProps("bank.accountName")}
                 />
+                <FieldError message={errors["bank.accountName"]} />
               </label>
               <label className="label">
                 BSB
@@ -254,7 +352,9 @@ function WorkspaceSettings() {
                     set("bank", { ...form.bank, bsb: event.target.value })
                   }
                   placeholder="067873"
+                  {...fieldProps("bank.bsb")}
                 />
+                <FieldError message={errors["bank.bsb"]} />
               </label>
               <label className="label">
                 Account number
@@ -269,7 +369,9 @@ function WorkspaceSettings() {
                     })
                   }
                   placeholder="26209068"
+                  {...fieldProps("bank.accountNumber")}
                 />
+                <FieldError message={errors["bank.accountNumber"]} />
               </label>
               <label className="label sm:col-span-2">
                 What the payer should reference
@@ -283,7 +385,9 @@ function WorkspaceSettings() {
                     })
                   }
                   placeholder="Invoice number or participant name"
+                  {...fieldProps("bank.payInstruction")}
                 />
+                <FieldError message={errors["bank.payInstruction"]} />
               </label>
             </div>
           </div>
@@ -299,7 +403,9 @@ function WorkspaceSettings() {
                 })
               }
               placeholder="Anything beyond the bank details above."
+              {...fieldProps("invoice.paymentInstructions")}
             />
+            <FieldError message={errors["invoice.paymentInstructions"]} />
           </label>
           <label className="label sm:col-span-2">
             Invoice footer
@@ -309,7 +415,9 @@ function WorkspaceSettings() {
               onChange={event =>
                 set("invoice", { ...form.invoice, footer: event.target.value })
               }
+              {...fieldProps("invoice.footer")}
             />
+            <FieldError message={errors["invoice.footer"]} />
           </label>
         </div>
       </Panel>
@@ -348,6 +456,7 @@ function WorkspaceSettings() {
               value={newCategory}
               onChange={event => setNewCategory(event.target.value)}
               placeholder="New category, e.g. Capacity building"
+              {...fieldProps("budgetCategories")}
             />
             <Btn
               variant="secondary"
@@ -367,8 +476,35 @@ function WorkspaceSettings() {
               Add
             </Btn>
           </div>
+          <FieldError message={errors.budgetCategories} />
         </div>
       </Panel>
+      {invalidPaths.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-md border border-[#f0d2d0] bg-[#fff2f0] px-3 py-2.5 text-xs text-[#9d4942]"
+        >
+          <b className="block">
+            {invalidPaths.length === 1
+              ? "One field needs fixing before these settings can be saved:"
+              : `${invalidPaths.length} fields need fixing before these settings can be saved:`}
+          </b>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4">
+            {invalidPaths.map(path => (
+              <li key={path}>
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => focusField(path)}
+                >
+                  {FIELD_LABELS[path] ?? path}
+                </button>{" "}
+                — {errors[path]}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <FormAlert message={error} />
       <div className="flex justify-end">
         <Btn type="submit" loading={update.isPending}>
